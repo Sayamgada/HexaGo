@@ -1,0 +1,98 @@
+services:
+  # 1. API Gateway & Core Dispatch Service (Go)
+  - type: web
+    name: dispatch-go
+    runtime: docker
+    dockerfilePath: services/dispatch-go/Dockerfile
+    dockerContext: services/dispatch-go
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: AGENTS_URL
+        fromService:
+          type: web
+          name: agents-py
+          property: host
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hexago-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: key-value
+          name: hexago-redis
+          property: connectionString
+      - key: DEMO_MODE
+        value: "true"
+      - key: CITY_CENTER_LAT
+        value: "12.9716"
+      - key: CITY_CENTER_LNG
+        value: "77.5946"
+
+  # 2. Autonomous Multi-Agent Brain Service (Python / FastAPI / LangGraph)
+  - type: web
+    name: agents-py
+    runtime: docker
+    dockerfilePath: services/agents-py/Dockerfile
+    dockerContext: services/agents-py
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: LLM_MODEL
+        value: gemini/gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hexago-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: key-value
+          name: hexago-redis
+          property: connectionString
+      - key: DEMO_MODE
+        value: "true"
+      - key: CITY_CENTER_LAT
+        value: "12.9716"
+      - key: CITY_CENTER_LNG
+        value: "77.5946"
+
+  # 3. Flutter Web Frontend (Static Site)
+  - type: web
+    name: hexago-web
+    runtime: static
+    buildCommand: |
+      if [ ! -d "$HOME/flutter" ]; then
+        git clone https://github.com/flutter/flutter.git -b stable --depth 1 $HOME/flutter
+      fi
+      export PATH="$PATH:$HOME/flutter/bin"
+      cd apps/hexago_app
+      flutter config --enable-web
+      flutter build web --release --dart-define=API_BASE_URL=https://dispatch-go.onrender.com --dart-define=WS_BASE_URL=wss://dispatch-go.onrender.com
+    staticPublishPath: apps/hexago_app/build/web
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: API_BASE_URL
+        value: https://dispatch-go.onrender.com
+      - key: WS_BASE_URL
+        value: wss://dispatch-go.onrender.com
+
+databases:
+  # Managed PostgreSQL with pgvector extension enabled
+  - name: hexago-postgres
+    databaseName: hexago
+    user: hexago
+    plan: starter
+    postgresMajorVersion: "16"
+
+  # Managed Key-Value Store (Redis) for driver telemetry & Pub/Sub
+  - name: hexago-redis
+    plan: starter

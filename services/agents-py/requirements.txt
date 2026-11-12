@@ -1,0 +1,15 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.14.3
+pydantic-settings==2.16.2
+langgraph==0.2.53
+langchain-core==0.3.21
+litellm==1.109.1
+sqlalchemy==2.0.36
+pgvector==0.3.6
+asyncpg==0.30.0
+redis==5.2.0
+prometheus-client==0.21.1
+httpx==0.28.1
+numpy==2.5.4
+websockets==17.4

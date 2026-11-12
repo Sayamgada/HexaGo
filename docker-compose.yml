@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: hexago-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hexago
+      POSTGRES_PASSWORD: hexago_secure_password
+      POSTGRES_DB: hexago
+    ports:
+      - "5432:5432"
+    volumes:
+      - hexago_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hexago -d hexago"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hexago-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - hexago_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  agents-py:
+    build:
+      context: ./services/agents-py
+      dockerfile: Dockerfile
+    container_name: hexago-agents-py
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgres://hexago:hexago_secure_password@postgres:5432/hexago?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-2.5-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEMO_MODE: ${DEMO_MODE:-true}
+      CITY_CENTER_LAT: ${CITY_CENTER_LAT:-12.9716}
+      CITY_CENTER_LNG: ${CITY_CENTER_LNG:-77.5946}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  dispatch-go:
+    build:
+      context: ./services/dispatch-go
+      dockerfile: Dockerfile
+    container_name: hexago-dispatch-go
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      AGENTS_URL: http://agents-py:8000
+      DATABASE_URL: postgres://hexago:hexago_secure_password@postgres:5432/hexago?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      DEMO_MODE: ${DEMO_MODE:-true}
+      CITY_CENTER_LAT: ${CITY_CENTER_LAT:-12.9716}
+      CITY_CENTER_LNG: ${CITY_CENTER_LNG:-77.5946}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      agents-py:
+        condition: service_started
+
+volumes:
+  hexago_pgdata:
+  hexago_redisdata:

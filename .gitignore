@@ -1,0 +1,57 @@
+# Environments and secrets
+.env
+*.env.local
+*.pem
+*.key
+*.cert
+
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+
+# Go
+bin/
+services/dispatch-go/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+coverage.out
+coverage.html
+
+# Flutter / Dart
+apps/hexago_app/.dart_tool/
+apps/hexago_app/.flutter-plugins
+apps/hexago_app/.flutter-plugins-dependencies
+apps/hexago_app/.packages
+apps/hexago_app/build/
+apps/hexago_app/.pub-cache/
+apps/hexago_app/.pub/
+apps/hexago_app/coverage/
+apps/hexago_app/windows/flutter/ephemeral/
+apps/hexago_app/linux/flutter/ephemeral/
+apps/hexago_app/macos/Flutter/ephemeral/
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
