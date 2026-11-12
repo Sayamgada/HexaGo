@@ -97,3 +97,4 @@ HexaGo operates with eleven specialized autonomous agents coordinating via LangG
 7. **Default Demo City**:
    - **Bengaluru, India**
    - Configurable via `CITY_CENTER_LAT` (default: `12.9716`) and `CITY_CENTER_LNG` (default: `77.5946`).
+

@@ -47,3 +47,4 @@ async def test_agent_fallback_parsing():
         assert data["agent"] == "Booking Intent"
         assert "passengers" in data["extracted"]
         assert data["fallback_mode"] in (True, False)
+

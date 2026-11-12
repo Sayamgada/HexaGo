@@ -20,3 +20,4 @@ func LatLngToH3Cell(lat, lng float64, resolution int) (string, error) {
 	}
 	return cell.String(), nil
 }
+

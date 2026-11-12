@@ -96,3 +96,4 @@ databases:
   # Managed Key-Value Store (Redis) for driver telemetry & Pub/Sub
   - name: hexago-redis
     plan: starter
+

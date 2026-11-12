@@ -152,3 +152,4 @@ HexaGo includes a top-level `render.yaml` Blueprint specification deploying:
 - `dispatch-go`: Docker web service gateway on port 8080
 - `agents-py`: Docker web service autonomous brain on port 8000
 - `hexago-web`: Static site running Flutter Web release build
+

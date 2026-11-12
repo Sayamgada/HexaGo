@@ -101,3 +101,4 @@ func NewRouter(cfg *config.Config) *chi.Mux {
 
 	return r
 }
+

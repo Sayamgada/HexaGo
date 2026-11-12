@@ -17,3 +17,4 @@ class AppConfig {
   static const double cityLat = 12.9716;
   static const double cityLng = 77.5946;
 }
+

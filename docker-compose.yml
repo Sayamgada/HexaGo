@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -83,3 +81,4 @@ services:
 volumes:
   hexago_pgdata:
   hexago_redisdata:
+
