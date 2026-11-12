@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,38 +13,38 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/server"
 )
 
-func setupTestServer(t *testing.T, agentsURL string) *httptest.Server {
-	t.Helper()
-	cfg := &config.Config{
+type mockRoundTripper func(req *http.Request) (*http.Response, error)
+
+func (m mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m(req)
+}
+
+func testConfig() *config.Config {
+	return &config.Config{
 		Port:          8080,
-		AgentsURL:     agentsURL,
+		AgentsURL:     "http://mock-agents:8000",
 		DatabaseURL:   "postgres://hexago:hexago@localhost:5432/hexago?sslmode=disable",
 		RedisURL:      "redis://localhost:6379/0",
 		DemoMode:      true,
 		CityCenterLat: 12.9716,
 		CityCenterLng: 77.5946,
 	}
-
-	router := server.NewRouter(cfg)
-	return httptest.NewServer(router)
 }
 
 func TestHealthz(t *testing.T) {
-	ts := setupTestServer(t, "http://localhost:8000")
-	defer ts.Close()
+	cfg := testConfig()
+	router := server.NewRouter(cfg)
 
-	resp, err := http.Get(ts.URL + "/healthz")
-	if err != nil {
-		t.Fatalf("Failed to call /healthz: %v", err)
-	}
-	defer resp.Body.Close()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 
 	var body map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("Failed to parse JSON body: %v", err)
 	}
 
@@ -56,21 +57,19 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestPing(t *testing.T) {
-	ts := setupTestServer(t, "http://localhost:8000")
-	defer ts.Close()
+	cfg := testConfig()
+	router := server.NewRouter(cfg)
 
-	resp, err := http.Get(ts.URL + "/v1/ping")
-	if err != nil {
-		t.Fatalf("Failed to call /v1/ping: %v", err)
-	}
-	defer resp.Body.Close()
+	req := httptest.NewRequest(http.MethodGet, "/v1/ping", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 
 	var body map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("Failed to parse JSON body: %v", err)
 	}
 
@@ -83,66 +82,67 @@ func TestPing(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
-	ts := setupTestServer(t, "http://localhost:8000")
-	defer ts.Close()
+	cfg := testConfig()
+	router := server.NewRouter(cfg)
 
-	resp, err := http.Get(ts.URL + "/metrics")
-	if err != nil {
-		t.Fatalf("Failed to call /metrics: %v", err)
-	}
-	defer resp.Body.Close()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("Failed to read response body: %v", err)
-	}
-
-	content := string(data)
+	content := rec.Body.String()
 	if !strings.Contains(content, "promhttp_") && !strings.Contains(content, "go_") {
 		t.Errorf("Expected metrics response to contain promhttp or go metrics, got: %s", content[:min(200, len(content))])
 	}
 }
 
 func TestAgentsReverseProxy(t *testing.T) {
-	// Mock agents-py server
-	mockAgents := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/agents/ping":
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"service":"agents-py","status":"ok"}`))
-		case "/v1/agents/echo":
-			bodyBytes, _ := io.ReadAll(r.Body)
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-Custom-Echo", r.Header.Get("X-Custom-Test"))
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(bodyBytes)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer mockAgents.Close()
+	cfg := testConfig()
 
-	ts := setupTestServer(t, mockAgents.URL)
-	defer ts.Close()
+	// In-memory mock transport for reverse proxy
+	mockTransport := mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/v1/agents/ping":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"service":"agents-py","status":"ok"}`)),
+			}, nil
+		case "/v1/agents/echo":
+			bodyBytes, _ := io.ReadAll(req.Body)
+			hdr := http.Header{"Content-Type": []string{"application/json"}}
+			if val := req.Header.Get("X-Custom-Test"); val != "" {
+				hdr.Set("X-Custom-Echo", val)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     hdr,
+				Body:       io.NopCloser(bytes.NewReader(bodyBytes)),
+			}, nil
+		default:
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+			}, nil
+		}
+	})
+
+	router := server.NewRouter(cfg, server.WithTransport(mockTransport))
 
 	// 1. Test GET /v1/agents/ping
-	resp, err := http.Get(ts.URL + "/v1/agents/ping")
-	if err != nil {
-		t.Fatalf("Failed to GET /v1/agents/ping: %v", err)
-	}
-	defer resp.Body.Close()
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/agents/ping", nil)
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, getReq)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200 from proxied route, got %d", resp.StatusCode)
+	if getRec.Code != http.StatusOK {
+		t.Errorf("Expected status 200 from proxied GET, got %d", getRec.Code)
 	}
 
 	var pingBody map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&pingBody); err != nil {
+	if err := json.Unmarshal(getRec.Body.Bytes(), &pingBody); err != nil {
 		t.Fatalf("Failed to decode proxied response: %v", err)
 	}
 	if pingBody["service"] != "agents-py" {
@@ -151,30 +151,22 @@ func TestAgentsReverseProxy(t *testing.T) {
 
 	// 2. Test POST /v1/agents/echo
 	reqBody := `{"query":"book a ride to Indiranagar"}`
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/agents/echo", strings.NewReader(reqBody))
-	if err != nil {
-		t.Fatalf("Failed to build POST request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Custom-Test", "test-header-val")
+	postReq := httptest.NewRequest(http.MethodPost, "/v1/agents/echo", strings.NewReader(reqBody))
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("X-Custom-Test", "test-header-val")
+	postRec := httptest.NewRecorder()
+	router.ServeHTTP(postRec, postReq)
 
-	postResp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to POST /v1/agents/echo: %v", err)
-	}
-	defer postResp.Body.Close()
-
-	if postResp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200 from proxied POST, got %d", postResp.StatusCode)
+	if postRec.Code != http.StatusOK {
+		t.Errorf("Expected status 200 from proxied POST, got %d", postRec.Code)
 	}
 
-	if postResp.Header.Get("X-Custom-Echo") != "test-header-val" {
-		t.Errorf("Expected custom header to be forwarded, got %s", postResp.Header.Get("X-Custom-Echo"))
+	if postRec.Header().Get("X-Custom-Echo") != "test-header-val" {
+		t.Errorf("Expected custom header to be forwarded, got %s", postRec.Header().Get("X-Custom-Echo"))
 	}
 
-	respBytes, _ := io.ReadAll(postResp.Body)
-	if string(respBytes) != reqBody {
-		t.Errorf("Expected body %s, got %s", reqBody, string(respBytes))
+	if postRec.Body.String() != reqBody {
+		t.Errorf("Expected body %s, got %s", reqBody, postRec.Body.String())
 	}
 }
 
@@ -184,4 +176,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-

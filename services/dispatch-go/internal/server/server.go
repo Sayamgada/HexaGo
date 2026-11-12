@@ -21,8 +21,28 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// Option allows configuring optional router settings.
+type Option func(*RouterOptions)
+
+// RouterOptions holds optional dependencies like custom HTTP transport.
+type RouterOptions struct {
+	Transport http.RoundTripper
+}
+
+// WithTransport configures a custom RoundTripper for reverse proxy requests.
+func WithTransport(tr http.RoundTripper) Option {
+	return func(o *RouterOptions) {
+		o.Transport = tr
+	}
+}
+
 // NewRouter constructs and configures the Chi router for dispatch-go.
-func NewRouter(cfg *config.Config) *chi.Mux {
+func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
+	var options RouterOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -85,6 +105,9 @@ func NewRouter(cfg *config.Config) *chi.Mux {
 		log.Printf("Warning: Failed to parse AGENTS_URL '%s': %v", cfg.AgentsURL, err)
 	} else {
 		proxy := httputil.NewSingleHostReverseProxy(target)
+		if options.Transport != nil {
+			proxy.Transport = options.Transport
+		}
 		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
 			originalDirector(req)
@@ -101,4 +124,3 @@ func NewRouter(cfg *config.Config) *chi.Mux {
 
 	return r
 }
-
