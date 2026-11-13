@@ -75,7 +75,7 @@ services:
       export PATH="$PATH:$HOME/flutter/bin"
       cd apps/hexago_app
       flutter config --enable-web
-      flutter build web --release --dart-define=API_BASE_URL=https://dispatch-go.onrender.com --dart-define=WS_BASE_URL=wss://dispatch-go.onrender.com
+      flutter build web --release --dart-define=API_BASE_URL="$API_BASE_URL" --dart-define=WS_BASE_URL="$WS_BASE_URL"
     staticPublishPath: apps/hexago_app/build/web
     routes:
       - type: rewrite

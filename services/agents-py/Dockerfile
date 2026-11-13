@@ -22,7 +22,8 @@ COPY . .
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD curl -f http://localhost:8000/healthz || exit 1
+  CMD curl -f "http://localhost:${PORT:-8000}/healthz" || exit 1
 
-CMD ["uvicorn", "src.agents_py.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form so the platform-provided $PORT (e.g. Render) is honoured; defaults to 8000.
+CMD ["sh", "-c", "exec uvicorn src.agents_py.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 

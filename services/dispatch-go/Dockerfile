@@ -44,7 +44,7 @@ ENV PORT=8080 \
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD curl -f http://localhost:8080/healthz || exit 1
+  CMD curl -f "http://localhost:${PORT:-8080}/healthz" || exit 1
 
 CMD ["/app/dispatch-server"]
 

@@ -153,3 +153,112 @@ HexaGo includes a top-level `render.yaml` Blueprint specification deploying:
 - `agents-py`: Docker web service autonomous brain on port 8000
 - `hexago-web`: Static site running Flutter Web release build
 
+## Manual Render setup
+
+Use this checklist to create every resource by hand in the Render dashboard, all on the **Free** plan, without the Blueprint.
+Create them **in this order**: later steps paste URLs from earlier ones.
+
+**Before you start**
+- Pick **one region for everything** (e.g. **Singapore**, the closest to Bengaluru). Internal URLs only work inside one region.
+- Leave `PORT` **unset** on both web services. Render injects it (default `10000`), and both services listen on it: dispatch-go reads `PORT`, and agents-py's Dockerfile starts uvicorn with `--port ${PORT:-8000}`.
+- Both Dockerfiles use **their own service folder** as the Docker build context (they `COPY go.mod` / `COPY requirements.txt` from it). They do **not** expect the repo root.
+
+### 1. hexago-postgres (New → Postgres)
+| Field | Value |
+|---|---|
+| Name | `hexago-postgres` |
+| Database | `hexago` |
+| User | `hexago` |
+| Region | your chosen region |
+| PostgreSQL Version | `16` |
+| Plan | Free |
+
+When it's live, copy the **Internal Database URL** from the database's *Info* page. You'll need it in steps 3 and 4.
+
+### 2. hexago-redis (New → Key Value)
+| Field | Value |
+|---|---|
+| Name | `hexago-redis` |
+| Region | same region |
+| Maxmemory Policy | `allkeys-lru` (default is fine) |
+| Plan | Free |
+
+When it's live, copy the **Internal Key Value URL** (`redis://red-…:6379`). You'll need it in steps 3 and 4.
+
+### 3. agents-py (New → Web Service → your repo)
+| Field | Value |
+|---|---|
+| Name | `agents-py` |
+| Language / Runtime | `Docker` |
+| Branch | `main` |
+| Region | same region |
+| Root Directory | `services/agents-py` |
+| Dockerfile Path | `./Dockerfile` (relative to Root Directory) |
+| Docker Build Context Directory | `.` (relative to Root Directory) |
+| Health Check Path (Advanced) | `/healthz` |
+| Plan | Free |
+
+Environment variables:
+| Key | Value | Source |
+|---|---|---|
+| `LLM_MODEL` | `gemini/gemini-2.5-flash` | literal |
+| `GEMINI_API_KEY` | your Gemini API key | your secret |
+| `DATABASE_URL` | Internal Database URL | copy from **hexago-postgres** |
+| `REDIS_URL` | Internal Key Value URL | copy from **hexago-redis** |
+| `DEMO_MODE` | `true` | literal |
+| `CITY_CENTER_LAT` | `12.9716` | literal |
+| `CITY_CENTER_LNG` | `77.5946` | literal |
+
+When it's live, copy its **public URL** from the top of the service page, e.g. `https://agents-py.onrender.com`. Render may add a suffix such as `agents-py-ab12.onrender.com`, so copy the real one. To confirm it works, open `<url>/healthz`.
+
+### 4. dispatch-go (New → Web Service → your repo)
+| Field | Value |
+|---|---|
+| Name | `dispatch-go` |
+| Language / Runtime | `Docker` |
+| Branch | `main` |
+| Region | same region |
+| Root Directory | `services/dispatch-go` |
+| Dockerfile Path | `./Dockerfile` (relative to Root Directory) |
+| Docker Build Context Directory | `.` (relative to Root Directory) |
+| Health Check Path (Advanced) | `/healthz` |
+| Plan | Free |
+
+Environment variables:
+| Key | Value | Source |
+|---|---|---|
+| `AGENTS_URL` | agents-py public URL, e.g. `https://agents-py.onrender.com` (no trailing slash) | copy from **agents-py** |
+| `DATABASE_URL` | Internal Database URL | copy from **hexago-postgres** |
+| `REDIS_URL` | Internal Key Value URL | copy from **hexago-redis** |
+| `DEMO_MODE` | `true` | literal |
+| `CITY_CENTER_LAT` | `12.9716` | literal |
+| `CITY_CENTER_LNG` | `77.5946` | literal |
+
+When it's live, copy its public URL (e.g. `https://dispatch-go.onrender.com`). To confirm it works, open `<url>/healthz`. To check that requests reach agents-py, open `<url>/v1/agents/ping`.
+
+### 5. hexago-web (New → Static Site → your repo)
+| Field | Value |
+|---|---|
+| Name | `hexago-web` |
+| Branch | `main` |
+| Root Directory | `apps/hexago_app` |
+| Build Command | see below |
+| Publish Directory | `build/web` (relative to Root Directory) |
+
+Build Command (paste as one line):
+```bash
+if [ ! -d "$HOME/flutter" ]; then git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$HOME/flutter"; fi && export PATH="$PATH:$HOME/flutter/bin" && flutter config --enable-web && flutter build web --release --dart-define=API_BASE_URL="$API_BASE_URL" --dart-define=WS_BASE_URL="$WS_BASE_URL"
+```
+
+Environment variables (Flutter bakes these in at build time, so redeploy after changing them):
+| Key | Value | Source |
+|---|---|---|
+| `API_BASE_URL` | dispatch-go public URL, e.g. `https://dispatch-go.onrender.com` | copy from **dispatch-go** |
+| `WS_BASE_URL` | same host with `wss://`, e.g. `wss://dispatch-go.onrender.com` | copy from **dispatch-go** |
+
+After it's created, open **Redirects/Rewrites** and add a rule: Source `/*`, Destination `/index.html`, Action **Rewrite**.
+
+### Free-plan caveats
+- Free web services sleep after about 15 minutes idle, and the first request after that takes about a minute. dispatch-go's 15 s write timeout can cut off a proxied call to a sleeping agents-py, so wake agents-py first by opening its `/healthz`.
+- Free Postgres databases expire about 30 days after creation, unless upgraded.
+- Free Key Value is in-memory only, with no persistence. That's fine for live driver locations and Pub/Sub.
