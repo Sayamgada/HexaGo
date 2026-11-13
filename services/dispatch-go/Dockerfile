@@ -1,5 +1,5 @@
 # Stage 1: Multi-stage build with CGO enabled for uber/h3-go
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 # Install C compiler tools required for uber/h3-go CGO bindings
 RUN apt-get update && apt-get install -y --no-install-recommends \

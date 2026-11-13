@@ -20,7 +20,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: services/dispatch-go/go.mod
           cache-dependency-path: services/dispatch-go/go.sum
 
       - name: Install C build dependencies (for h3-go CGO)
