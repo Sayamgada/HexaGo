@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config represents runtime configuration loaded from environment variables.
@@ -37,13 +38,22 @@ func Load() *Config {
 
 	return &Config{
 		Port:          port,
-		AgentsURL:     getEnv("AGENTS_URL", "http://localhost:8000"),
+		AgentsURL:     withScheme(getEnv("AGENTS_URL", "http://localhost:8000")),
 		DatabaseURL:   getEnv("DATABASE_URL", "postgres://hexago:hexago@localhost:5432/hexago?sslmode=disable"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		DemoMode:      demoMode,
 		CityCenterLat: lat,
 		CityCenterLng: lng,
 	}
+}
+
+// withScheme prefixes http:// when the URL has no scheme, e.g. Render's
+// fromService "hostport" value ("agents-py-xyz:8000").
+func withScheme(u string) string {
+	if strings.Contains(u, "://") {
+		return u
+	}
+	return "http://" + u
 }
 
 func getEnv(key, defaultVal string) string {

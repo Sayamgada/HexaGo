@@ -1,3 +1,4 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
 services:
   # 1. API Gateway & Core Dispatch Service (Go)
   - type: web
@@ -9,19 +10,20 @@ services:
     healthCheckPath: /healthz
     envVars:
       - key: PORT
-        value: 8080
+        value: "8080"
       - key: AGENTS_URL
+        # hostport yields "host:port" on the private network; dispatch-go adds the http:// scheme.
         fromService:
           type: web
           name: agents-py
-          property: host
+          property: hostport
       - key: DATABASE_URL
         fromDatabase:
           name: hexago-postgres
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: key-value
+          type: keyvalue
           name: hexago-redis
           property: connectionString
       - key: DEMO_MODE
@@ -41,7 +43,7 @@ services:
     healthCheckPath: /healthz
     envVars:
       - key: PORT
-        value: 8000
+        value: "8000"
       - key: LLM_MODEL
         value: gemini/gemini-2.5-flash
       - key: GEMINI_API_KEY
@@ -52,7 +54,7 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: key-value
+          type: keyvalue
           name: hexago-redis
           property: connectionString
       - key: DEMO_MODE
@@ -62,7 +64,7 @@ services:
       - key: CITY_CENTER_LNG
         value: "77.5946"
 
-  # 3. Flutter Web Frontend (Static Site)
+  # 3. Flutter Web Frontend (Static Site; static sites take no plan)
   - type: web
     name: hexago-web
     runtime: static
@@ -85,15 +87,18 @@ services:
       - key: WS_BASE_URL
         value: wss://dispatch-go.onrender.com
 
+  # 4. Managed Key Value store (Redis-compatible) for driver telemetry & Pub/Sub.
+  # Key Value instances are declared under services with type keyvalue; ipAllowList is required.
+  - type: keyvalue
+    name: hexago-redis
+    plan: starter
+    ipAllowList: [] # private network only; no external connections
+
 databases:
-  # Managed PostgreSQL with pgvector extension enabled
+  # Managed PostgreSQL (enable pgvector with CREATE EXTENSION vector)
   - name: hexago-postgres
     databaseName: hexago
     user: hexago
-    plan: starter
+    plan: basic-256mb
     postgresMajorVersion: "16"
-
-  # Managed Key-Value Store (Redis) for driver telemetry & Pub/Sub
-  - name: hexago-redis
-    plan: starter
-
+    ipAllowList: [] # private network only
