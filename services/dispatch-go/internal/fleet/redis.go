@@ -40,6 +40,18 @@ func (m *RedisMirror) Set(ctx context.Context, d Driver) error {
 	return m.client.GeoAdd(ctx, m.key, &redis.GeoLocation{Name: d.ID, Longitude: d.Lng, Latitude: d.Lat}).Err()
 }
 
+// SetMany implements BatchMirror with a single GEOADD.
+func (m *RedisMirror) SetMany(ctx context.Context, ds []Driver) error {
+	if len(ds) == 0 {
+		return nil
+	}
+	locs := make([]*redis.GeoLocation, len(ds))
+	for i, d := range ds {
+		locs[i] = &redis.GeoLocation{Name: d.ID, Longitude: d.Lng, Latitude: d.Lat}
+	}
+	return m.client.GeoAdd(ctx, m.key, locs...).Err()
+}
+
 // Remove implements Mirror.
 func (m *RedisMirror) Remove(ctx context.Context, id string) error {
 	return m.client.ZRem(ctx, m.key, id).Err()

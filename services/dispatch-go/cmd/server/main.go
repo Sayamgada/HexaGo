@@ -17,20 +17,25 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 	"github.com/hexago/hexago/services/dispatch-go/internal/server"
+	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
+	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
 
 func main() {
 	cfg := config.Load()
-	ctx := context.Background()
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
 
+	center := geo.Point{Lat: cfg.CityCenterLat, Lng: cfg.CityCenterLng}
 	opts := dispatch.Options{
 		H3Resolution:    cfg.H3Resolution,
-		Center:          geo.Point{Lat: cfg.CityCenterLat, Lng: cfg.CityCenterLng},
+		Center:          center,
 		CitySpeedFactor: cfg.CitySpeedFactor,
 	}
 
 	// Persistence: Postgres (migrated on boot) when configured, else in memory.
+	var telemetry store.TelemetryStore = store.NewMemory()
 	if cfg.DatabaseURL != "" {
 		pg, err := store.OpenPostgres(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -38,14 +43,27 @@ func main() {
 		} else {
 			defer pg.Close()
 			opts.Store = pg
-			opts.Telemetry = store.NewPostgresTelemetry(pg.Pool())
+			telemetry = store.NewPostgresTelemetry(pg.Pool())
 			log.Println("Postgres connected; migrations applied")
 		}
 	} else {
 		log.Println("DATABASE_URL not set; using in-memory store")
 	}
+	if opts.Store == nil {
+		mem := store.NewMemory()
+		opts.Store, telemetry = mem, mem
+	}
 
-	// Redis GEO mirror of driver positions; optional.
+	// Telemetry is buffered and written in batches (one COPY per interval).
+	batcher := store.NewTelemetryBatcher(telemetry, store.BatcherOptions{
+		Interval: cfg.TelemetryFlush, Retention: cfg.TelemetryRetention,
+	})
+	opts.Telemetry = batcher
+	batchDone := make(chan struct{})
+	go func() { batcher.Run(ctx); close(batchDone) }()
+
+	// Redis: GEO mirror of driver positions and pub/sub for /v1/stream; both optional.
+	var broker stream.Broker
 	if cfg.RedisURL != "" {
 		m, err := fleet.NewRedisMirror(ctx, cfg.RedisURL)
 		if err != nil {
@@ -54,28 +72,63 @@ func main() {
 			defer m.Close()
 			opts.Mirror = m
 		}
+		b, err := stream.NewRedisBroker(ctx, cfg.RedisURL)
+		if err != nil {
+			log.Printf("WARN: Redis pub/sub unavailable, /v1/stream fans out in-process only: %v", err)
+		} else {
+			defer b.Close()
+			broker = b
+		}
 	}
+	hub := stream.NewHub(stream.HubOptions{Broker: broker})
+	go hub.Run(ctx)
 
 	reg := prometheus.NewRegistry()
 	opts.Registry = reg
+	opts.Publisher = hub
 	svc, err := dispatch.New(opts)
 	if err != nil {
 		log.Fatalf("dispatch broker: %v", err)
 	}
-	router := server.NewRouter(cfg, server.WithDispatch(svc, reg))
+
+	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub)}
+	simDone := make(chan struct{})
+	if cfg.DemoMode {
+		var router sim.Router = sim.StraightLine{}
+		if cfg.OSRMURL != "" {
+			router = sim.NewOSRM(sim.OSRMOptions{BaseURL: cfg.OSRMURL, RPS: cfg.OSRMRPS})
+		}
+		s, err := sim.New(sim.Options{
+			Service: svc, Publisher: hub, Router: router, Drivers: cfg.SimDrivers,
+			DemandPerMin: cfg.SimDemandPerMin, Center: center, Telemetry: batcher, Registry: reg,
+		})
+		if err != nil {
+			log.Fatalf("simulator: %v", err)
+		}
+		if cfg.SimDrivers == 0 {
+			zero := 0
+			_, _ = s.Configure(ctx, sim.ConfigInput{Drivers: &zero})
+		}
+		routerOpts = append(routerOpts, server.WithSim(s))
+		go func() { s.Run(ctx); close(simDone) }()
+		log.Printf("DEMO_MODE: fleet simulator on (%d drivers, router %s)", cfg.SimDrivers, routerName(cfg))
+	} else {
+		close(simDone)
+	}
+	router := server.NewRouter(cfg, routerOpts...)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 15 * time.Second, // cleared for hijacked WebSocket connections
 		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
-		log.Printf("Starting dispatch-go gateway on %s (city centre %.4f, %.4f; geo=%s res=%d; store=%s; mirror=%s)",
-			addr, cfg.CityCenterLat, cfg.CityCenterLng, geo.Backend(), cfg.H3Resolution, svc.StoreKind(), svc.MirrorKind())
+		log.Printf("Starting dispatch-go gateway on %s (city centre %.4f, %.4f; geo=%s res=%d; store=%s; mirror=%s; stream=%s)",
+			addr, cfg.CityCenterLat, cfg.CityCenterLng, geo.Backend(), cfg.H3Resolution, svc.StoreKind(), svc.MirrorKind(), hub.BrokerKind())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server listen failed: %v", err)
 		}
@@ -88,8 +141,18 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	stop() // stop simulator, hub and batcher (final telemetry flush)
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
+	<-simDone
+	<-batchDone
 	log.Println("dispatch-go gateway stopped gracefully.")
+}
+
+func routerName(cfg *config.Config) string {
+	if cfg.OSRMURL == "" {
+		return "straight-line"
+	}
+	return fmt.Sprintf("OSRM %s @ %.1f req/s", cfg.OSRMURL, cfg.OSRMRPS)
 }

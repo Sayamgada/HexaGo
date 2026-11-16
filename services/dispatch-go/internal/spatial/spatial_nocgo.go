@@ -12,4 +12,3 @@ func LatLngToH3Cell(lat, lng float64, resolution int) (string, error) {
 	// Deterministic spatial cell representation for non-CGO host dev
 	return fmt.Sprintf("hex_%d_%.4f_%.4f", resolution, lat, lng), nil
 }
-

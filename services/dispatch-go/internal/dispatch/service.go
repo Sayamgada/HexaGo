@@ -23,6 +23,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/matching"
 	"github.com/hexago/hexago/services/dispatch-go/internal/metrics"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
+	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
 
 // AgentName identifies this broker in the agent_events audit trail.
@@ -45,6 +46,8 @@ type Options struct {
 	Mirror          fleet.Mirror
 	Registry        prometheus.Registerer // nil = metrics not exported to Prometheus
 	Logger          *log.Logger
+	// Publisher receives an ops agent_event for every dispatch decision (nil = none).
+	Publisher stream.Publisher
 }
 
 // Service is the dispatch broker.
@@ -61,6 +64,10 @@ type Service struct {
 	// rideMu serialises ride state transitions (cancel vs. driver status
 	// changes). Matching and plain location pings do not take it.
 	rideMu sync.Mutex
+
+	publisher stream.Publisher
+	obsMu     sync.RWMutex
+	observer  func(store.Ride)
 }
 
 // New builds a Service.
@@ -111,6 +118,7 @@ func New(o Options) (*Service, error) {
 		rec:       rec,
 		log:       o.Logger,
 		now:       func() time.Time { return time.Now().UTC() },
+		publisher: o.Publisher,
 	}
 	if o.Registry != nil {
 		s.registerGauges(o.Registry)
@@ -265,7 +273,111 @@ func (s *Service) CreateRide(ctx context.Context, in CreateRideInput) (RideView,
 		s.rec.IncUnmatched()
 	}
 	s.recordMatchEvent(ctx, ride, req, view, res)
+	if view != nil {
+		s.notify(ride)
+	}
 	return RideView{Ride: ride, Match: view}, nil
+}
+
+// SetRideObserver registers fn to be called (synchronously; it must not block
+// or call back into rides) whenever a ride is matched or cancelled.
+func (s *Service) SetRideObserver(fn func(store.Ride)) {
+	s.obsMu.Lock()
+	s.observer = fn
+	s.obsMu.Unlock()
+}
+
+func (s *Service) notify(r store.Ride) {
+	s.obsMu.RLock()
+	fn := s.observer
+	s.obsMu.RUnlock()
+	if fn != nil {
+		fn(r)
+	}
+}
+
+func (s *Service) publish(ev stream.AgentEvent) {
+	if s.publisher != nil {
+		s.publisher.Publish(stream.TopicOps, ev)
+	}
+}
+
+// AgentEventInput is an agent decision to audit and stream.
+type AgentEventInput struct {
+	Agent        string
+	EventType    string
+	RideID       string
+	Input        any
+	Decision     string
+	Reasoning    string
+	Confidence   float64
+	LatencyMs    float64
+	UsedFallback bool
+}
+
+// RecordAgentEvent writes e to agent_events and publishes it on the ops topic.
+func (s *Service) RecordAgentEvent(ctx context.Context, e AgentEventInput) {
+	now := s.now()
+	input, _ := json.Marshal(e.Input)
+	if e.Input == nil {
+		input = nil
+	}
+	decision, _ := json.Marshal(map[string]any{"decision": e.Decision, "reasoning": e.Reasoning})
+	if err := s.store.RecordEvent(ctx, store.AgentEvent{
+		Agent: e.Agent, EventType: e.EventType, RideID: e.RideID, Input: input, Decision: decision,
+		Confidence: e.Confidence, FallbackUsed: e.UsedFallback, LatencyMs: e.LatencyMs, CreatedAt: now,
+	}); err != nil {
+		s.log.Printf("WARN dispatch: write agent_events: %v", err)
+	}
+	s.publish(stream.NewAgentEvent(e.Agent, e.Decision, e.Reasoning, e.Confidence, e.LatencyMs, e.UsedFallback, now))
+}
+
+// AdvanceRide moves a ride along its trip lifecycle and keeps the driver's
+// status in step: matched → in_progress (driver en_route → on_trip) and
+// in_progress → completed (driver on_trip → idle).
+func (s *Service) AdvanceRide(ctx context.Context, id string, to store.RideStatus) (store.Ride, error) {
+	var from store.RideStatus
+	var dFrom, dTo fleet.Status
+	switch to {
+	case store.RideInProgress:
+		from, dFrom, dTo = store.RideMatched, fleet.StatusEnRoute, fleet.StatusOnTrip
+	case store.RideCompleted:
+		from, dFrom, dTo = store.RideInProgress, fleet.StatusOnTrip, fleet.StatusIdle
+	default:
+		return store.Ride{}, fmt.Errorf("%w: cannot advance a ride to %q", ErrValidation, to)
+	}
+	s.rideMu.Lock()
+	defer s.rideMu.Unlock()
+	r, err := s.store.GetRide(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Ride{}, fmt.Errorf("%w: ride %s", ErrNotFound, id)
+	}
+	if err != nil {
+		return store.Ride{}, err
+	}
+	if r.Status != from {
+		return store.Ride{}, fmt.Errorf("%w: ride is %s, not %s", ErrConflict, r.Status, from)
+	}
+	if r.DriverID != "" {
+		if _, err := s.fleet.Claim(r.DriverID, dFrom, dTo); err != nil && !errors.Is(err, fleet.ErrNotFound) {
+			return store.Ride{}, fmt.Errorf("%w: %v", ErrConflict, err)
+		}
+	}
+	r.Status = to
+	r.UpdatedAt = s.now()
+	if err := s.store.UpdateRide(ctx, r); err != nil {
+		return store.Ride{}, err
+	}
+	return r, nil
+}
+
+// CloseStaleRides cancels every non-terminal ride last updated before `before`.
+// The simulator calls it at start-up: rides from a previous process reference
+// drivers that no longer exist and would otherwise inflate the live metrics.
+func (s *Service) CloseStaleRides(ctx context.Context, before time.Time) (int64, error) {
+	s.rideMu.Lock()
+	defer s.rideMu.Unlock()
+	return s.store.CloseStaleRides(ctx, before, "gateway_restart", s.now())
 }
 
 func (s *Service) assign(ride *store.Ride, best matching.Candidate, tripKm float64) {
@@ -330,6 +442,29 @@ func (s *Service) recordMatchEvent(ctx context.Context, ride store.Ride, req mat
 	if err := s.store.RecordEvent(ctx, ev); err != nil {
 		s.log.Printf("WARN dispatch: write agent_events: %v", err)
 	}
+	decision, reasoning := describeMatch(ride, req, view, res)
+	s.publish(stream.NewAgentEvent(AgentName, decision, reasoning, ev.Confidence, ev.LatencyMs, false, ev.CreatedAt))
+}
+
+func describeMatch(ride store.Ride, req matching.Request, view *MatchView, res matching.Result) (decision, reasoning string) {
+	rings := fmt.Sprintf("%d H3 ring", res.RingsSearched)
+	if res.RingsSearched != 1 {
+		rings += "s"
+	}
+	if view == nil {
+		return fmt.Sprintf("no driver available for ride %s (%s); request left open", ride.ID, req.Tier),
+			fmt.Sprintf("Searched %s around the pickup; no idle %s driver was eligible.", rings, req.Tier)
+	}
+	sc := view.Score
+	decision = fmt.Sprintf("matched ride %s to %s (%s), pickup ETA %.1f min",
+		ride.ID, view.Driver.ID, view.Driver.Tier, sc.ETASeconds/60)
+	reasoning = fmt.Sprintf("Best of %d candidates within %s: %.2f km away; scores ETA %.2f, momentum %.2f, rating %.2f, idle %.2f, battery %.2f → %.2f.",
+		view.Considered, rings, sc.DistanceKm, sc.ETA, sc.Momentum, sc.Rating, sc.Idle, sc.Battery, sc.Total)
+	if len(view.Alternatives) > 0 {
+		a := view.Alternatives[0]
+		reasoning += fmt.Sprintf(" Runner-up %s scored %.2f.", a.DriverID, a.Score.Total)
+	}
+	return decision, reasoning
 }
 
 // GetRide returns a ride by ID.
@@ -343,6 +478,14 @@ func (s *Service) GetRide(ctx context.Context, id string) (RideView, error) {
 
 // CancelRide cancels an open or matched ride and frees its driver.
 func (s *Service) CancelRide(ctx context.Context, id, reason string) (RideView, error) {
+	v, err := s.cancelRide(ctx, id, reason)
+	if err == nil {
+		s.notify(v.Ride)
+	}
+	return v, err
+}
+
+func (s *Service) cancelRide(ctx context.Context, id, reason string) (RideView, error) {
 	s.rideMu.Lock()
 	defer s.rideMu.Unlock()
 	r, err := s.store.GetRide(ctx, id)

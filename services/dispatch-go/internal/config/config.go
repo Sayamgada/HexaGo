@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 )
@@ -22,7 +23,20 @@ type Config struct {
 	H3Resolution int
 	// CitySpeedFactor scales driving speed for congestion in ETAs (CITY_SPEED_FACTOR, (0,1], default 0.6).
 	CitySpeedFactor float64
+
+	// Fleet simulator (runs when DemoMode is on).
+	SimDrivers      int     // SIM_DRIVERS, 0..2000, default 300
+	SimDemandPerMin float64 // SIM_DEMAND_PER_MIN, mean ride requests per minute, default 6
+	OSRMURL         string  // OSRM_URL, default public demo server; "off" = straight lines only
+	OSRMRPS         float64 // OSRM_RPS, request rate limit, default 1 (public server policy)
+
+	// Telemetry persistence.
+	TelemetryFlush     time.Duration // TELEMETRY_FLUSH_INTERVAL, default 5s
+	TelemetryRetention time.Duration // TELEMETRY_RETENTION, default 2h (0 keeps everything)
 }
+
+// DefaultOSRMURL is the public OSRM demo server.
+const DefaultOSRMURL = "https://router.project-osrm.org"
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
@@ -53,7 +67,31 @@ func Load() *Config {
 		speed = 0.6
 	}
 
+	simDrivers, err := strconv.Atoi(getEnv("SIM_DRIVERS", "300"))
+	if err != nil || simDrivers < 0 || simDrivers > 2000 {
+		simDrivers = 300
+	}
+	demand, err := strconv.ParseFloat(getEnv("SIM_DEMAND_PER_MIN", "6"), 64)
+	if err != nil || demand < 0 {
+		demand = 6
+	}
+	osrmURL := strings.TrimRight(getEnv("OSRM_URL", DefaultOSRMURL), "/")
+	if strings.EqualFold(osrmURL, "off") {
+		osrmURL = ""
+	}
+	rps, err := strconv.ParseFloat(getEnv("OSRM_RPS", "1"), 64)
+	if err != nil || rps <= 0 {
+		rps = 1
+	}
+
 	return &Config{
+		SimDrivers:         simDrivers,
+		SimDemandPerMin:    demand,
+		OSRMURL:            osrmURL,
+		OSRMRPS:            rps,
+		TelemetryFlush:     durationEnv("TELEMETRY_FLUSH_INTERVAL", 5*time.Second, false),
+		TelemetryRetention: durationEnv("TELEMETRY_RETENTION", 2*time.Hour, true),
+
 		Port:      port,
 		AgentsURL: withScheme(getEnv("AGENTS_URL", "http://localhost:8000")),
 		// Empty DATABASE_URL / REDIS_URL mean "run in memory" (local dev, tests).
@@ -75,6 +113,16 @@ func withScheme(u string) string {
 		return u
 	}
 	return "http://" + u
+}
+
+// durationEnv parses a Go duration; invalid or negative values (or zero unless
+// allowZero) fall back to def.
+func durationEnv(key string, def time.Duration, allowZero bool) time.Duration {
+	d, err := time.ParseDuration(getEnv(key, def.String()))
+	if err != nil || d < 0 || (d == 0 && !allowZero) {
+		return def
+	}
+	return d
 }
 
 func getEnv(key, defaultVal string) string {

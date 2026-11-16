@@ -265,3 +265,38 @@ func (t *PostgresTelemetry) RecentTelemetry(ctx context.Context, driverID string
 		return p, err
 	})
 }
+
+// CloseStaleRides implements Store.
+func (p *Postgres) CloseStaleRides(ctx context.Context, before time.Time, reason string, now time.Time) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE rides SET status = 'cancelled', cancel_reason = $2, updated_at = $3
+		WHERE status IN ('requested', 'matched', 'in_progress') AND updated_at < $1`, before, reason, now)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// AppendTelemetryBatch implements BatchTelemetryStore with a single COPY.
+func (t *PostgresTelemetry) AppendTelemetryBatch(ctx context.Context, ps []TelemetryPoint) error {
+	if len(ps) == 0 {
+		return nil
+	}
+	_, err := t.pool.CopyFrom(ctx,
+		pgx.Identifier{"telemetry_points"},
+		[]string{"driver_id", "lat", "lng", "heading", "speed_kmh", "status", "h3_cell", "recorded_at"},
+		pgx.CopyFromSlice(len(ps), func(i int) ([]any, error) {
+			p := ps[i]
+			return []any{p.DriverID, p.Lat, p.Lng, p.Heading, p.SpeedKmh, p.Status, p.H3Cell, p.RecordedAt}, nil
+		}))
+	return err
+}
+
+// PruneTelemetry implements TelemetryPruner.
+func (t *PostgresTelemetry) PruneTelemetry(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := t.pool.Exec(ctx, `DELETE FROM telemetry_points WHERE recorded_at < $1`, before)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}

@@ -459,3 +459,64 @@ func TestRedisMirrorUnreachable(t *testing.T) {
 		t.Error("expected ping error for unreachable Redis")
 	}
 }
+
+type batchMirror struct {
+	recordingMirror
+	batches int
+}
+
+func (b *batchMirror) SetMany(ctx context.Context, ds []Driver) error {
+	b.batches++
+	for _, d := range ds {
+		if err := b.Set(ctx, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestApplyLocalDefersMirrorUntilSync(t *testing.T) {
+	for _, batching := range []bool{false, true} {
+		rm := &recordingMirror{}
+		bm := &batchMirror{}
+		var m Mirror = rm
+		if batching {
+			m = bm
+		}
+		idx, _ := newTestIndex(t, WithMirror(m))
+		if _, err := idx.ApplyLocal("d1", func(d *Driver, _ bool) error {
+			*d = driver("d1", center, StatusIdle, TierMini)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := idx.ApplyLocal("d2", func(d *Driver, _ bool) error {
+			*d = driver("d2", center, StatusOffline, TierMini)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		mirrored := func() int {
+			if batching {
+				return len(bm.set)
+			}
+			return len(rm.set)
+		}
+		if mirrored() != 0 {
+			t.Fatal("ApplyLocal wrote to the mirror")
+		}
+		idx.SyncMirror()
+		if mirrored() != 1 { // offline d2 is not mirrored
+			t.Fatalf("after sync %d mirrored (batching=%v)", mirrored(), batching)
+		}
+		if batching && bm.batches != 1 {
+			t.Fatalf("batches %d", bm.batches)
+		}
+		if got := len(idx.Snapshot()); got != 2 {
+			t.Fatalf("snapshot %d", got)
+		}
+	}
+	// No mirror: no-op.
+	idx, _ := newTestIndex(t)
+	idx.SyncMirror()
+}

@@ -178,6 +178,40 @@ func contract(t *testing.T, s Store, tel TelemetryStore) {
 	if pts, _ := tel.RecentTelemetry(ctx, "nobody", 3); len(pts) != 0 {
 		t.Errorf("RecentTelemetry(nobody) = %v", pts)
 	}
+
+	// Batched telemetry and retention pruning.
+	if bt, ok := tel.(BatchTelemetryStore); ok {
+		batch := []TelemetryPoint{
+			{DriverID: "drv-b", Lat: 12.9, Lng: 77.5, RecordedAt: t0.Add(-time.Hour)},
+			{DriverID: "drv-b", Lat: 12.91, Lng: 77.5, RecordedAt: t0},
+		}
+		if err := bt.AppendTelemetryBatch(ctx, batch); err != nil {
+			t.Fatalf("AppendTelemetryBatch: %v", err)
+		}
+		if err := bt.AppendTelemetryBatch(ctx, nil); err != nil {
+			t.Fatalf("empty batch: %v", err)
+		}
+		if pts, _ := tel.RecentTelemetry(ctx, "drv-b", 0); len(pts) != 2 {
+			t.Errorf("batch rows = %d", len(pts))
+		}
+		if pr, ok := tel.(TelemetryPruner); ok {
+			if n, err := pr.PruneTelemetry(ctx, t0.Add(-time.Minute)); err != nil || n < 1 {
+				t.Errorf("PruneTelemetry = %d, %v", n, err)
+			}
+			if pts, _ := tel.RecentTelemetry(ctx, "drv-b", 0); len(pts) != 1 {
+				t.Errorf("after prune rows = %d", len(pts))
+			}
+		}
+	}
+
+	// Stale ride cleanup: everything non-terminal created above is older than "far future".
+	future := time.Now().Add(24 * time.Hour)
+	if _, err := s.CloseStaleRides(ctx, future, "gateway_restart", future); err != nil {
+		t.Fatalf("CloseStaleRides: %v", err)
+	}
+	if c, _ := s.RideCounts(ctx); c.Open != 0 || c.InProgress != 0 {
+		t.Errorf("RideCounts after CloseStaleRides = %+v", c)
+	}
 }
 
 func TestMemoryContract(t *testing.T) {

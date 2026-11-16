@@ -162,3 +162,54 @@ func (m *Memory) RecentTelemetry(_ context.Context, driverID string, limit int) 
 	}
 	return out, nil
 }
+
+// AppendTelemetryBatch implements BatchTelemetryStore.
+func (m *Memory) AppendTelemetryBatch(ctx context.Context, ps []TelemetryPoint) error {
+	for _, p := range ps {
+		if err := m.AppendTelemetry(ctx, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PruneTelemetry implements TelemetryPruner.
+func (m *Memory) PruneTelemetry(_ context.Context, before time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for id, pts := range m.telemetry {
+		kept := pts[:0]
+		for _, p := range pts {
+			if p.RecordedAt.Before(before) {
+				n++
+				continue
+			}
+			kept = append(kept, p)
+		}
+		if len(kept) == 0 {
+			delete(m.telemetry, id)
+		} else {
+			m.telemetry[id] = kept
+		}
+	}
+	return n, nil
+}
+
+// CloseStaleRides implements Store.
+func (m *Memory) CloseStaleRides(_ context.Context, before time.Time, reason string, now time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for id, r := range m.rides {
+		if r.Status.Terminal() || !r.UpdatedAt.Before(before) {
+			continue
+		}
+		r.Status = RideCancelled
+		r.CancelReason = reason
+		r.UpdatedAt = now
+		m.rides[id] = r
+		n++
+	}
+	return n, nil
+}

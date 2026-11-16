@@ -141,6 +141,10 @@ type Store interface {
 	ActiveRideForDriver(ctx context.Context, driverID string) (Ride, error)
 	RideCounts(ctx context.Context) (RideCounts, error)
 
+	// CloseStaleRides cancels non-terminal rides last updated before `before`
+	// (e.g. left over from a previous process whose drivers no longer exist).
+	CloseStaleRides(ctx context.Context, before time.Time, reason string, now time.Time) (int64, error)
+
 	RecordEvent(ctx context.Context, e AgentEvent) error
 	// RecentEvents returns the newest events first.
 	RecentEvents(ctx context.Context, limit int) ([]AgentEvent, error)
@@ -151,4 +155,14 @@ type TelemetryStore interface {
 	AppendTelemetry(ctx context.Context, p TelemetryPoint) error
 	// RecentTelemetry returns up to limit points for a driver, newest first (limit <= 0: all retained).
 	RecentTelemetry(ctx context.Context, driverID string, limit int) ([]TelemetryPoint, error)
+}
+
+// BatchTelemetryStore can write many points in one round trip.
+type BatchTelemetryStore interface {
+	AppendTelemetryBatch(ctx context.Context, ps []TelemetryPoint) error
+}
+
+// TelemetryPruner deletes points recorded before a cutoff.
+type TelemetryPruner interface {
+	PruneTelemetry(ctx context.Context, before time.Time) (int64, error)
 }

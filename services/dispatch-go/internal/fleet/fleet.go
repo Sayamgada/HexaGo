@@ -222,6 +222,57 @@ func statusSlot(s Status) int {
 // error aborts without changes. The ID is pinned, the heading normalised, the
 // cell recomputed and IdleSince/UpdatedAt maintained automatically.
 func (i *Index) Apply(id string, fn func(d *Driver, exists bool) error) (Driver, error) {
+	return i.apply(id, fn, true)
+}
+
+// ApplyLocal is Apply without the synchronous mirror write. High-frequency
+// writers (the fleet simulator) use it and call SyncMirror periodically.
+func (i *Index) ApplyLocal(id string, fn func(d *Driver, exists bool) error) (Driver, error) {
+	return i.apply(id, fn, false)
+}
+
+// BatchMirror is implemented by mirrors that can write many drivers at once.
+type BatchMirror interface {
+	SetMany(ctx context.Context, ds []Driver) error
+}
+
+// SyncMirror writes the current position of every non-offline driver to the
+// mirror in one batch (one call per driver if the mirror cannot batch).
+func (i *Index) SyncMirror() {
+	if i.mirror == nil {
+		return
+	}
+	ds := i.Snapshot()
+	active := ds[:0]
+	for _, d := range ds {
+		if d.Status != StatusOffline {
+			active = append(active, d)
+		}
+	}
+	if bm, ok := i.mirror.(BatchMirror); ok {
+		i.mirrorDo(func(ctx context.Context) error { return bm.SetMany(ctx, active) })
+		return
+	}
+	for _, d := range active {
+		i.mirrorDo(func(ctx context.Context) error { return i.mirror.Set(ctx, d) })
+	}
+}
+
+// Snapshot returns a copy of every indexed driver (unordered).
+func (i *Index) Snapshot() []Driver {
+	out := make([]Driver, 0, i.Len())
+	for s := range i.ids {
+		sh := &i.ids[s]
+		sh.mu.Lock()
+		for _, d := range sh.m {
+			out = append(out, d)
+		}
+		sh.mu.Unlock()
+	}
+	return out
+}
+
+func (i *Index) apply(id string, fn func(d *Driver, exists bool) error, mirror bool) (Driver, error) {
 	sh := i.idShardFor(id)
 	sh.mu.Lock()
 	old, exists := sh.m[id]
@@ -262,9 +313,11 @@ func (i *Index) Apply(id string, fn func(d *Driver, exists bool) error) (Driver,
 	i.byStatus[statusSlot(next.Status)].Add(1)
 	sh.mu.Unlock()
 
-	if next.Status == StatusOffline {
+	switch {
+	case !mirror:
+	case next.Status == StatusOffline:
 		i.mirrorDo(func(ctx context.Context) error { return i.mirror.Remove(ctx, id) })
-	} else {
+	default:
 		i.mirrorDo(func(ctx context.Context) error { return i.mirror.Set(ctx, next) })
 	}
 	return next, nil

@@ -21,4 +21,3 @@ func TestLatLngToH3Cell(t *testing.T) {
 		t.Fatal("Expected non-empty H3 cell string")
 	}
 }
-

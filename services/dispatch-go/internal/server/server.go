@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -17,6 +18,8 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
+	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
+	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
 
 // Option allows configuring optional router settings.
@@ -27,6 +30,8 @@ type RouterOptions struct {
 	Transport http.RoundTripper
 	Dispatch  *dispatch.Service
 	Gatherer  prometheus.Gatherer
+	Hub       *stream.Hub
+	Sim       *sim.Sim
 }
 
 // WithTransport configures a custom RoundTripper for reverse proxy requests.
@@ -45,12 +50,29 @@ func WithDispatch(svc *dispatch.Service, gatherer prometheus.Gatherer) Option {
 	}
 }
 
+// WithStream uses hub for /v1/stream. The caller runs hub.Run; without this
+// option the router creates an in-process hub and runs it in the background.
+func WithStream(hub *stream.Hub) Option {
+	return func(o *RouterOptions) { o.Hub = hub }
+}
+
+// WithSim mounts the fleet simulator controls (otherwise /v1/sim/* answer 503).
+func WithSim(s *sim.Sim) Option {
+	return func(o *RouterOptions) { o.Sim = s }
+}
+
 // NewRouter constructs and configures the Chi router for dispatch-go.
 func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	var options RouterOptions
 	for _, opt := range opts {
 		opt(&options)
 	}
+
+	if options.Hub == nil {
+		options.Hub = stream.NewHub(stream.HubOptions{})
+		go options.Hub.Run(context.Background())
+	}
+	hub := options.Hub
 
 	if options.Dispatch == nil {
 		// No broker supplied: run fully in memory (tests, local dev).
@@ -60,6 +82,7 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 			Center:          geo.Point{Lat: cfg.CityCenterLat, Lng: cfg.CityCenterLng},
 			CitySpeedFactor: cfg.CitySpeedFactor,
 			Registry:        reg,
+			Publisher:       hub,
 		})
 		if err != nil {
 			log.Fatalf("dispatch: %v", err)
@@ -67,6 +90,7 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 		options.Dispatch, options.Gatherer = svc, reg
 	}
 	svc := options.Dispatch
+	hub.SetMetricsSource(func(ctx context.Context) (any, error) { return svc.Metrics(ctx) })
 	gatherers := prometheus.Gatherers{prometheus.DefaultGatherer}
 	if options.Gatherer != nil {
 		gatherers = append(gatherers, options.Gatherer)
@@ -98,11 +122,14 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 			"service":   "dispatch-go",
 			"demo_mode": cfg.DemoMode,
 			"components": map[string]interface{}{
-				"store":         svc.StoreKind(),
-				"fleet_mirror":  svc.MirrorKind(),
-				"mirror_ok":     svc.Fleet().MirrorHealthy(),
-				"geo_backend":   geo.Backend(),
-				"h3_resolution": svc.Geo().Resolution(),
+				"store":          svc.StoreKind(),
+				"fleet_mirror":   svc.MirrorKind(),
+				"mirror_ok":      svc.Fleet().MirrorHealthy(),
+				"geo_backend":    geo.Backend(),
+				"h3_resolution":  svc.Geo().Resolution(),
+				"stream_broker":  hub.BrokerKind(),
+				"stream_clients": hub.Clients(),
+				"simulator":      options.Sim != nil && options.Sim.Status().Running,
 			},
 			"city_center": map[string]float64{
 				"lat": cfg.CityCenterLat,
@@ -116,6 +143,14 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 
 	// Dispatch broker: rides, driver status, dispatch metrics.
 	svc.Routes(r)
+
+	// Live stream (drivers, rides, ops) and simulator controls.
+	r.Handle("/v1/stream", hub.Handler(upgrader))
+	if options.Sim != nil {
+		options.Sim.Routes(r)
+	} else {
+		sim.DisabledRoutes(r)
+	}
 
 	// Gateway ping route
 	r.Get("/v1/ping", func(w http.ResponseWriter, r *http.Request) {
