@@ -1,31 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
 import 'config/app_config.dart';
+import 'features/ops/ops_command_center_screen.dart';
 import 'screens/home_screen.dart';
+import 'theme/hexago_theme.dart';
 
 void main() {
-  runApp(const HexaGoApp());
+  runApp(const ProviderScope(child: HexaGoApp()));
 }
 
-class HexaGoApp extends StatelessWidget {
-  const HexaGoApp({super.key});
+GoRouter buildRouter({String initialLocation = '/'}) => GoRouter(
+      initialLocation: initialLocation,
+      routes: [
+        GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+        GoRoute(path: '/ops', builder: (context, state) => const OpsCommandCenterScreen()),
+      ],
+    );
+
+class HexaGoApp extends StatefulWidget {
+  const HexaGoApp({super.key, this.initialLocation = '/'});
+
+  final String initialLocation;
+
+  @override
+  State<HexaGoApp> createState() => _HexaGoAppState();
+}
+
+class _HexaGoAppState extends State<HexaGoApp> {
+  late final GoRouter _router = buildRouter(initialLocation: widget.initialLocation);
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0F172A),
-        primaryColor: const Color(0xFF38BDF8),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF38BDF8),
-          secondary: Color(0xFFF59E0B),
-          surface: Color(0xFF1E293B),
-        ),
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+      theme: buildHexaTheme(),
+      routerConfig: _router,
     );
   }
 }

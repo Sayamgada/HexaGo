@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../config/app_config.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,6 +16,10 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _selectedRole = role;
     });
+    if (role == 'Ops Command Center') {
+      context.push('/ops');
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Activated: $role via ${AppConfig.apiBaseUrl}'),

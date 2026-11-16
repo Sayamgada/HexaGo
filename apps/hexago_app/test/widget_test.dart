@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hexago_app/config/app_config.dart';
+import 'package:hexago_app/features/ops/state/ops_providers.dart';
 import 'package:hexago_app/main.dart';
+
+import 'ops/fakes.dart';
+
+Widget _app() => ProviderScope(
+      overrides: [
+        opsSourceProvider.overrideWith((ref) => FakeOpsSource()),
+        showMapTilesProvider.overrideWithValue(false),
+      ],
+      child: const HexaGoApp(),
+    );
 
 void main() {
   group('AppConfig Tests', () {
@@ -15,7 +27,7 @@ void main() {
 
   group('HexaGo Home Screen Widget Tests', () {
     testWidgets('renders HexaGo branding and all three role cards', (WidgetTester tester) async {
-      await tester.pumpWidget(const HexaGoApp());
+      await tester.pumpWidget(_app());
 
       // Verify HexaGo brand header
       expect(find.text('HexaGo'), findsWidgets);
@@ -33,7 +45,7 @@ void main() {
     });
 
     testWidgets('tapping on Rider role card updates selection', (WidgetTester tester) async {
-      await tester.pumpWidget(const HexaGoApp());
+      await tester.pumpWidget(_app());
 
       final riderCardFinder = find.byKey(const Key('role-card-Rider'));
       expect(riderCardFinder, findsOneWidget);
@@ -46,18 +58,19 @@ void main() {
       expect(find.descendant(of: badgeFinder, matching: find.text('Selected Role: Rider')), findsOneWidget);
     });
 
-    testWidgets('tapping on Ops Command Center role card updates selection', (WidgetTester tester) async {
-      await tester.pumpWidget(const HexaGoApp());
+    testWidgets('tapping the Ops Command Center card opens the command center', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_app());
 
-      final opsCardFinder = find.byKey(const Key('role-card-Ops Command Center'));
-      expect(opsCardFinder, findsOneWidget);
+      await tester.tap(find.byKey(const Key('role-card-Ops Command Center')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-      await tester.tap(opsCardFinder);
-      await tester.pumpAndSettle();
-
-      final badgeFinder = find.byKey(const Key('selected-role-badge'));
-      expect(badgeFinder, findsOneWidget);
-      expect(find.descendant(of: badgeFinder, matching: find.text('Selected Role: Ops Command Center')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ops-command-center')), findsOneWidget);
+      expect(find.textContaining('0 humans in the loop'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
     });
   });
 }
