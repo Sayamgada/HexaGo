@@ -28,6 +28,7 @@ func testConfig() *config.Config {
 		DemoMode:      true,
 		CityCenterLat: 12.9716,
 		CityCenterLng: 77.5946,
+		CORSOrigins:   "https://hexago-web.onrender.com,http://localhost:*",
 	}
 }
 
@@ -167,6 +168,45 @@ func TestAgentsReverseProxy(t *testing.T) {
 
 	if postRec.Body.String() != reqBody {
 		t.Errorf("Expected body %s, got %s", reqBody, postRec.Body.String())
+	}
+}
+
+func TestCORSOnProxiedAgents(t *testing.T) {
+	cfg := testConfig()
+	// Upstream sets its own CORS header; the gateway must replace it, not duplicate it.
+	upstream := mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type":                []string{"application/json"},
+				"Access-Control-Allow-Origin": []string{"*"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"message":"pong"}`)),
+		}, nil
+	})
+	router := server.NewRouter(cfg, server.WithTransport(upstream))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/agents/ping", nil)
+	req.Header.Set("Origin", "https://hexago-web.onrender.com")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != "https://hexago-web.onrender.com" {
+		t.Errorf("Access-Control-Allow-Origin = %v, want exactly the web origin", got)
+	}
+
+	// Preflight is answered by the gateway without reaching agents-py.
+	pre := httptest.NewRequest(http.MethodOptions, "/v1/agents/parse-intent", nil)
+	pre.Header.Set("Origin", "http://localhost:5173")
+	pre.Header.Set("Access-Control-Request-Method", "POST")
+	pre.Header.Set("Access-Control-Request-Headers", "content-type")
+	preRec := httptest.NewRecorder()
+	router.ServeHTTP(preRec, pre)
+	if preRec.Code != http.StatusNoContent {
+		t.Errorf("preflight status = %d, want 204", preRec.Code)
+	}
+	if preRec.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
+		t.Errorf("preflight ACAO = %q", preRec.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
 

@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadAgentsURLNormalizesScheme(t *testing.T) {
 	cases := map[string]string{
@@ -14,5 +17,16 @@ func TestLoadAgentsURLNormalizesScheme(t *testing.T) {
 		if got := Load().AgentsURL; got != want {
 			t.Errorf("AGENTS_URL=%q: got %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestLoadCORSOrigins(t *testing.T) {
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+	if got := Load().CORSOrigins; !strings.Contains(got, "https://hexago-web.onrender.com") || !strings.Contains(got, "http://localhost:*") {
+		t.Errorf("default CORSOrigins = %q", got)
+	}
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com")
+	if got := Load().CORSOrigins; got != "https://example.com" {
+		t.Errorf("override CORSOrigins = %q", got)
 	}
 }

@@ -13,13 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/hexago/hexago/services/dispatch-go/internal/config"
+	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 )
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for dev/demo and client connectivity
-	},
-}
 
 // Option allows configuring optional router settings.
 type Option func(*RouterOptions)
@@ -43,12 +38,22 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 		opt(&options)
 	}
 
+	allow := cors.Parse(cfg.CORSOrigins)
+	upgrader := websocket.Upgrader{
+		// Browsers always send Origin; native clients (desktop, Android) usually do not.
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			return origin == "" || allow.Allowed(origin)
+		},
+	}
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(allow.Middleware)
 
 	// Liveness / readiness probe
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +112,10 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		if options.Transport != nil {
 			proxy.Transport = options.Transport
+		}
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			cors.StripUpstream(resp.Header)
+			return nil
 		}
 		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {

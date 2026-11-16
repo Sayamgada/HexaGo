@@ -51,6 +51,15 @@ flowchart TD
    - **PostgreSQL + pgvector**: Relational storage for users, vehicles, trips, payments, and the append-only `agent_events` audit table.
    - **Redis**: In-memory ephemeral store for driver geospatial indexes (`GEOADD` / H3 sets), live session state, and inter-service Pub/Sub.
 
+### Live Deployment (Render, Free plan, created manually)
+| Service | URL |
+|---|---|
+| dispatch-go (public gateway) | https://dispatch-go.onrender.com |
+| agents-py | https://hexago-65oz.onrender.com |
+| hexago-web (Flutter Web) | https://hexago-web.onrender.com |
+
+The web app calls only the gateway; `/v1/agents/*` is proxied to agents-py. Both services allow CORS from `CORS_ALLOWED_ORIGINS` (default: the web app origin plus `http://localhost:*` and `http://127.0.0.1:*` for local dev).
+
 ---
 
 ## 3. Autonomous Agent Roster
@@ -87,7 +96,7 @@ HexaGo operates with eleven specialized autonomous agents coordinating via LangG
      - `/metrics`: Prometheus-compatible metrics endpoint.
 3. **Configuration & Secrets**:
    - Zero hardcoded secrets or environment targets. All runtime configuration is driven strictly through environment variables.
-   - Standardized keys: `LLM_MODEL`, `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `AGENTS_URL`, `DEMO_MODE`, `CITY_CENTER_LAT`, `CITY_CENTER_LNG`.
+   - Standardized keys: `LLM_MODEL`, `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `AGENTS_URL`, `DEMO_MODE`, `CITY_CENTER_LAT`, `CITY_CENTER_LNG`, `CORS_ALLOWED_ORIGINS`.
 4. **Pluggable LLM Backends**:
    - All agent inference routes through LiteLLM configured by `LLM_MODEL` (e.g. `gemini/gemini-2.5-flash`, `openai/gpt-4o-mini`, `anthropic/claude-3-5-haiku`).
 5. **Deterministic Non-LLM Fallbacks**:

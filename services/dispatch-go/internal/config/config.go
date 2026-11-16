@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 )
 
 // Config represents runtime configuration loaded from environment variables.
@@ -15,6 +17,7 @@ type Config struct {
 	DemoMode      bool
 	CityCenterLat float64
 	CityCenterLng float64
+	CORSOrigins   string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -44,6 +47,7 @@ func Load() *Config {
 		DemoMode:      demoMode,
 		CityCenterLat: lat,
 		CityCenterLng: lng,
+		CORSOrigins:   getEnv("CORS_ALLOWED_ORIGINS", cors.DefaultOrigins),
 	}
 }
 
@@ -62,4 +66,3 @@ func getEnv(key, defaultVal string) string {
 	}
 	return defaultVal
 }
-

@@ -4,6 +4,18 @@
 
 100% of the architecture, services, application code, blueprints, and tests are AI-authored.
 
+## Live Deployment
+
+All services run on Render (Free plan, created manually; see [Manual Render setup](#manual-render-setup)):
+
+| Service | URL |
+|---|---|
+| Web app (Flutter Web) | https://hexago-web.onrender.com |
+| Gateway (`dispatch-go`) | https://dispatch-go.onrender.com |
+| Agents (`agents-py`) | https://hexago-65oz.onrender.com |
+
+Quick checks: [`/healthz`](https://dispatch-go.onrender.com/healthz) and [`/v1/agents/ping`](https://dispatch-go.onrender.com/v1/agents/ping) (proxied to agents-py). Free services sleep when idle, so the first request can take about a minute.
+
 ---
 
 ## Architecture Overview
@@ -112,6 +124,12 @@ Use the included `dev.ps1` script to manage local development and execute test s
 
 ---
 
+## CORS
+
+Both services read `CORS_ALLOWED_ORIGINS`, a comma-separated list of allowed browser origins. An entry ending in `:*` matches that host on any port (for Flutter dev servers). The default is `https://hexago-web.onrender.com,http://localhost:*,http://127.0.0.1:*`. The gateway also uses the list to check WebSocket `Origin` headers (native clients without an `Origin` are allowed), and it drops CORS headers from proxied agents-py responses so the browser sees one set.
+
+---
+
 ## API Gateway Endpoints (`dispatch-go`)
 
 | Endpoint | Method | Description |
@@ -208,6 +226,7 @@ Environment variables:
 | `DEMO_MODE` | `true` | literal |
 | `CITY_CENTER_LAT` | `12.9716` | literal |
 | `CITY_CENTER_LNG` | `77.5946` | literal |
+| `CORS_ALLOWED_ORIGINS` | optional; defaults to `https://hexago-web.onrender.com,http://localhost:*,http://127.0.0.1:*` | literal |
 
 When it's live, copy its **public URL** from the top of the service page, e.g. `https://agents-py.onrender.com`. Render may add a suffix such as `agents-py-ab12.onrender.com`, so copy the real one. To confirm it works, open `<url>/healthz`.
 
@@ -227,12 +246,13 @@ When it's live, copy its **public URL** from the top of the service page, e.g. `
 Environment variables:
 | Key | Value | Source |
 |---|---|---|
-| `AGENTS_URL` | agents-py public URL, e.g. `https://agents-py.onrender.com` (no trailing slash) | copy from **agents-py** |
+| `AGENTS_URL` | agents-py public URL, e.g. `https://hexago-65oz.onrender.com` (no trailing slash) | copy from **agents-py** |
 | `DATABASE_URL` | Internal Database URL | copy from **hexago-postgres** |
 | `REDIS_URL` | Internal Key Value URL | copy from **hexago-redis** |
 | `DEMO_MODE` | `true` | literal |
 | `CITY_CENTER_LAT` | `12.9716` | literal |
 | `CITY_CENTER_LNG` | `77.5946` | literal |
+| `CORS_ALLOWED_ORIGINS` | optional; defaults to `https://hexago-web.onrender.com,http://localhost:*,http://127.0.0.1:*` | literal |
 
 When it's live, copy its public URL (e.g. `https://dispatch-go.onrender.com`). To confirm it works, open `<url>/healthz`. To check that requests reach agents-py, open `<url>/v1/agents/ping`.
 

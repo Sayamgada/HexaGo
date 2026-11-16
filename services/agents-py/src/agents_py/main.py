@@ -2,12 +2,14 @@ import re
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Histogram
 import litellm
 
 from src.agents_py.config import settings
+from src.agents_py.cors import parse_origins
 
 # Prometheus Instrumentation
 REQUEST_COUNT = Counter(
@@ -32,6 +34,16 @@ app = FastAPI(
     description="Multi-agent orchestration platform for zero-human MaaS operations",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+_cors_origins, _cors_origin_regex = parse_origins(settings.CORS_ALLOWED_ORIGINS)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
+    max_age=600,
 )
 
 class IntentRequest(BaseModel):
