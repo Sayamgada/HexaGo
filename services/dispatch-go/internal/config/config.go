@@ -18,6 +18,10 @@ type Config struct {
 	CityCenterLat float64
 	CityCenterLng float64
 	CORSOrigins   string
+	// H3Resolution is the driver index resolution (H3_RESOLUTION, 0..15, default 9).
+	H3Resolution int
+	// CitySpeedFactor scales driving speed for congestion in ETAs (CITY_SPEED_FACTOR, (0,1], default 0.6).
+	CitySpeedFactor float64
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -39,15 +43,28 @@ func Load() *Config {
 
 	demoMode := getEnv("DEMO_MODE", "true") == "true"
 
+	res, err := strconv.Atoi(getEnv("H3_RESOLUTION", "9"))
+	if err != nil || res < 0 || res > 15 {
+		res = 9
+	}
+
+	speed, err := strconv.ParseFloat(getEnv("CITY_SPEED_FACTOR", "0.6"), 64)
+	if err != nil || speed <= 0 || speed > 1 {
+		speed = 0.6
+	}
+
 	return &Config{
-		Port:          port,
-		AgentsURL:     withScheme(getEnv("AGENTS_URL", "http://localhost:8000")),
-		DatabaseURL:   getEnv("DATABASE_URL", "postgres://hexago:hexago@localhost:5432/hexago?sslmode=disable"),
-		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
-		DemoMode:      demoMode,
-		CityCenterLat: lat,
-		CityCenterLng: lng,
-		CORSOrigins:   getEnv("CORS_ALLOWED_ORIGINS", cors.DefaultOrigins),
+		Port:      port,
+		AgentsURL: withScheme(getEnv("AGENTS_URL", "http://localhost:8000")),
+		// Empty DATABASE_URL / REDIS_URL mean "run in memory" (local dev, tests).
+		DatabaseURL:     getEnv("DATABASE_URL", ""),
+		RedisURL:        getEnv("REDIS_URL", ""),
+		DemoMode:        demoMode,
+		CityCenterLat:   lat,
+		CityCenterLng:   lng,
+		CORSOrigins:     getEnv("CORS_ALLOWED_ORIGINS", cors.DefaultOrigins),
+		H3Resolution:    res,
+		CitySpeedFactor: speed,
 	}
 }
 

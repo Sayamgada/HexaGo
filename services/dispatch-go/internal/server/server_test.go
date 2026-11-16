@@ -29,6 +29,7 @@ func testConfig() *config.Config {
 		CityCenterLat: 12.9716,
 		CityCenterLng: 77.5946,
 		CORSOrigins:   "https://hexago-web.onrender.com,http://localhost:*",
+		H3Resolution:  9,
 	}
 }
 
@@ -215,4 +216,48 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func TestDispatchRoutesMounted(t *testing.T) {
+	router := server.NewRouter(testConfig())
+
+	drv := httptest.NewRequest(http.MethodPost, "/v1/drivers/d1/status",
+		strings.NewReader(`{"status":"idle","lat":12.9716,"lng":77.5946,"tier":"mini"}`))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, drv)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("driver status: %d %s", rec.Code, rec.Body.String())
+	}
+
+	ride := httptest.NewRequest(http.MethodPost, "/v1/rides",
+		strings.NewReader(`{"rider_id":"r1","pickup":{"lat":12.9716,"lng":77.5946},"dropoff":{"lat":12.98,"lng":77.64},"tier":"mini"}`))
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, ride)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create ride: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/metrics/dispatch", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"matches_total":1`) {
+		t.Errorf("dispatch metrics: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{"dispatch_match_latency_seconds_bucket", "dispatch_matches_total", "dispatch_idle_drivers", "go_goroutines"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics missing %s", want)
+		}
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	var health map[string]interface{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &health)
+	comp, ok := health["components"].(map[string]interface{})
+	if !ok || comp["store"] != "memory" || comp["fleet_mirror"] != "none" || comp["h3_resolution"] != float64(9) {
+		t.Errorf("healthz components = %v", health["components"])
+	}
 }

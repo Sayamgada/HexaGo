@@ -30,3 +30,33 @@ func TestLoadCORSOrigins(t *testing.T) {
 		t.Errorf("override CORSOrigins = %q", got)
 	}
 }
+
+func TestLoadDispatchSettings(t *testing.T) {
+	tests := []struct {
+		res, speed string
+		wantRes    int
+		wantSpeed  float64
+	}{
+		{"", "", 9, 0.6},
+		{"8", "0.5", 8, 0.5},
+		{"16", "1.5", 9, 0.6},
+		{"abc", "-1", 9, 0.6},
+		{"0", "1", 0, 1},
+	}
+	for _, tc := range tests {
+		t.Setenv("H3_RESOLUTION", tc.res)
+		t.Setenv("CITY_SPEED_FACTOR", tc.speed)
+		c := Load()
+		if c.H3Resolution != tc.wantRes || c.CitySpeedFactor != tc.wantSpeed {
+			t.Errorf("H3_RESOLUTION=%q CITY_SPEED_FACTOR=%q: got %d/%v", tc.res, tc.speed, c.H3Resolution, c.CitySpeedFactor)
+		}
+	}
+}
+
+func TestLoadStorageURLsDefaultEmpty(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("REDIS_URL", "")
+	if c := Load(); c.DatabaseURL != "" || c.RedisURL != "" {
+		t.Errorf("unset storage URLs should stay empty (in-memory mode): %q %q", c.DatabaseURL, c.RedisURL)
+	}
+}
