@@ -16,6 +16,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
+	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
 	"github.com/hexago/hexago/services/dispatch-go/internal/server"
 	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
@@ -65,17 +66,25 @@ func main() {
 
 	// Redis: GEO mirror of driver positions and pub/sub for /v1/stream; both optional.
 	var broker stream.Broker
-	if cfg.RedisURL != "" {
+	redisMon := redisdiag.NewMonitor(cfg.RedisURL, time.Minute, 5*time.Second)
+	if cfg.RedisURL == "" {
+		log.Println("REDIS_URL not set; driver index and /v1/stream run in memory only")
+	} else {
+		masked := cfg.RedisURL
+		if info, err := redisdiag.Describe(cfg.RedisURL); err == nil {
+			masked = info.URL
+		}
+		log.Printf("Redis: connecting to %s", masked)
 		m, err := fleet.NewRedisMirror(ctx, cfg.RedisURL)
 		if err != nil {
-			log.Printf("WARN: Redis unavailable, driver index runs in memory only: %v", err)
+			log.Printf("ERROR: Redis %s unavailable, driver index runs in memory only: %v. %s", masked, err, redisdiag.Hint(err))
 		} else {
 			defer m.Close()
 			opts.Mirror = m
 		}
 		b, err := stream.NewRedisBroker(ctx, cfg.RedisURL)
 		if err != nil {
-			log.Printf("WARN: Redis pub/sub unavailable, /v1/stream fans out in-process only: %v", err)
+			log.Printf("ERROR: Redis %s pub/sub unavailable, /v1/stream fans out in-process only: %v. %s", masked, err, redisdiag.Hint(err))
 		} else {
 			defer b.Close()
 			broker = b
@@ -83,6 +92,7 @@ func main() {
 	}
 	hub := stream.NewHub(stream.HubOptions{Broker: broker})
 	go hub.Run(ctx)
+	go redisMon.Run(ctx)
 
 	reg := prometheus.NewRegistry()
 	opts.Registry = reg
@@ -92,7 +102,7 @@ func main() {
 		log.Fatalf("dispatch broker: %v", err)
 	}
 
-	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub)}
+	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon)}
 	simDone := make(chan struct{})
 	if cfg.DemoMode {
 		var router sim.Router = sim.StraightLine{}

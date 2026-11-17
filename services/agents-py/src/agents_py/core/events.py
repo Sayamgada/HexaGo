@@ -286,6 +286,11 @@ async def get_event_store() -> EventStore:
     global _store
     if _store is None:
         _store = EventStore(pool=await infra.get_pool(), redis=await infra.get_redis())
+    else:  # pick up Redis/Postgres that connected after the store was built
+        if _store.redis is None:
+            _store.redis = await infra.get_redis()
+        if _store.pool is None:
+            _store.pool = await infra.get_pool()
     return _store
 
 

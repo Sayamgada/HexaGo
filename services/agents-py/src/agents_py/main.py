@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import logging
 import re
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
@@ -15,6 +16,8 @@ from src.agents_py.api import router as platform_router
 from src.agents_py.config import settings
 from src.agents_py.core import infra
 from src.agents_py.cors import parse_origins
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # Prometheus Instrumentation
 REQUEST_COUNT = Counter(
@@ -32,16 +35,16 @@ REQUEST_LATENCY = Histogram(
 async def lifespan(app: FastAPI):
     # Setup LiteLLM parameters
     litellm.drop_params = True
-    heartbeat = None
+    tasks = [asyncio.create_task(infra.redis_monitor().run())]
     if settings.HEARTBEAT_INTERVAL_S > 0:
-        heartbeat = asyncio.create_task(ops_supervisor.heartbeat_loop(settings.HEARTBEAT_INTERVAL_S))
+        tasks.append(asyncio.create_task(ops_supervisor.heartbeat_loop(settings.HEARTBEAT_INTERVAL_S)))
     try:
         yield
     finally:
-        if heartbeat is not None:
-            heartbeat.cancel()
+        for task in tasks:
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat
+                await task
         await infra.close()
 
 app = FastAPI(
@@ -77,7 +80,10 @@ class IntentResponse(BaseModel):
     model_used: Optional[str] = None
 
 @app.get("/healthz")
-async def healthz():
+async def healthz(redis: Optional[str] = None):
+    monitor = infra.redis_monitor()
+    if redis == "fresh":
+        await monitor.check_now()
     return {
         "status": "ok",
         "service": "agents-py",
@@ -85,6 +91,7 @@ async def healthz():
         "demo_mode": settings.DEMO_MODE,
         "llm_enabled": settings.LLM_ENABLED,
         "components": await infra.status(),
+        "redis": monitor.last(),
         "city_center": {
             "lat": settings.CITY_CENTER_LAT,
             "lng": settings.CITY_CENTER_LNG,

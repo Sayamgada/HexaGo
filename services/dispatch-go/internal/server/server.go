@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,6 +19,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
+	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
 	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
@@ -32,6 +34,13 @@ type RouterOptions struct {
 	Gatherer  prometheus.Gatherer
 	Hub       *stream.Hub
 	Sim       *sim.Sim
+	Redis     *redisdiag.Monitor
+}
+
+// WithRedisMonitor reports m's latest Redis check on /healthz;
+// /healthz?redis=fresh runs a new check first.
+func WithRedisMonitor(m *redisdiag.Monitor) Option {
+	return func(o *RouterOptions) { o.Redis = m }
 }
 
 // WithTransport configures a custom RoundTripper for reverse proxy requests.
@@ -115,6 +124,15 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 
 	// Liveness / readiness probe
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		redisStatus := redisdiag.Result{}
+		if options.Redis != nil {
+			if r.URL.Query().Get("redis") == "fresh" {
+				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+				options.Redis.CheckNow(ctx)
+				cancel()
+			}
+			redisStatus = options.Redis.Last()
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -131,6 +149,7 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 				"stream_clients": hub.Clients(),
 				"simulator":      options.Sim != nil && options.Sim.Status().Running,
 			},
+			"redis": redisStatus,
 			"city_center": map[string]float64{
 				"lat": cfg.CityCenterLat,
 				"lng": cfg.CityCenterLng,

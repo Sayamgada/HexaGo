@@ -182,6 +182,8 @@ async def get_memory_store() -> MemoryStore:
         from src.agents_py.core.llm import get_llm
 
         _store = MemoryStore(pool=await infra.get_pool(), llm=await get_llm())
+    elif _store.pool is None:  # Postgres connected after the store was built
+        _store.pool = await infra.get_pool()
     return _store
 
 

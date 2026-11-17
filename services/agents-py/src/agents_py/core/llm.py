@@ -318,6 +318,8 @@ async def get_llm() -> LLMClient:
             cache_ttl_s=settings.LLM_CACHE_TTL_S,
             embedding_model=settings.EMBEDDING_MODEL,
         )
+    elif _client.store.redis is None:  # Redis connected after the client was built
+        _client.store.redis = await infra.get_redis()
     return _client
 
 

@@ -11,6 +11,7 @@ import time
 from typing import Any, Optional
 
 from src.agents_py.config import settings
+from src.agents_py.core import redisdiag
 
 log = logging.getLogger("hexago.infra")
 
@@ -38,10 +39,23 @@ async def get_redis() -> Any:
                                    socket_timeout=2, socket_connect_timeout=2)
         await client.ping()
         _redis, _redis_failed_at = client, None
+        log.info("redis connected: %s", redisdiag.mask(settings.REDIS_URL))
     except Exception as err:  # noqa: BLE001 - any failure means "run without Redis"
-        log.warning("redis unavailable, using in-memory state: %s", err)
+        log.error("redis %s unavailable, using in-memory state (retry in %ds): %s: %s. %s",
+                  redisdiag.mask(settings.REDIS_URL), RETRY_S, type(err).__name__, err, redisdiag.hint(err))
         _redis_failed_at = time.monotonic()
     return _redis
+
+
+_monitor: Optional[redisdiag.RedisMonitor] = None
+
+
+def redis_monitor() -> redisdiag.RedisMonitor:
+    """The process-wide REDIS_URL monitor reported on /healthz."""
+    global _monitor
+    if _monitor is None or _monitor.url != settings.REDIS_URL:
+        _monitor = redisdiag.RedisMonitor(settings.REDIS_URL)
+    return _monitor
 
 
 async def get_pool() -> Any:
@@ -68,8 +82,8 @@ def override(redis: Any = None, pool: Any = None) -> None:
 
 
 def reset() -> None:
-    global _redis, _pool, _redis_failed_at, _pool_failed_at
-    _redis = _pool = _redis_failed_at = _pool_failed_at = None
+    global _redis, _pool, _redis_failed_at, _pool_failed_at, _monitor
+    _redis = _pool = _redis_failed_at = _pool_failed_at = _monitor = None
 
 
 async def close() -> None:
