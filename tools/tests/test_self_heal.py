@@ -716,3 +716,84 @@ def test_github_client_json_helpers(monkeypatch):
     sh.dispatch_ci(gh, "autofix/1")
     assert sent[-1] == ("POST", "https://api.github.com/repos/acme/hexago/actions/workflows/ci.yml/dispatches",
                         {"ref": "autofix/1"})
+
+
+# ---------------------------------------------------------------- model fallback + LLM errors
+
+class NotFoundError(Exception):
+    pass
+
+
+def _reply(text):
+    return {"choices": [{"message": {"content": text}}]}
+
+
+def test_llm_falls_back_and_drops_retired_model():
+    seen = []
+
+    def completion(model, **kw):
+        seen.append(model)
+        if model == "gemini/old":
+            raise NotFoundError("This model models/old is no longer available to new users")
+        return _reply("ok from " + model)
+
+    llm = sh.LLM(["gemini/old", "gemini/new", "gemini/new"], completion)
+    assert llm([]) == "ok from gemini/new" and llm.used == "gemini/new"
+    assert llm([]) == "ok from gemini/new"
+    assert seen == ["gemini/old", "gemini/new", "gemini/new"]  # retired model not retried
+    assert llm.models == ["gemini/new"] and "no longer available" in llm.errors[0]
+
+
+def test_llm_keeps_model_after_transient_error_and_raises_when_all_fail():
+    def completion(model, **kw):
+        raise TimeoutError("read timed out")
+
+    llm = sh.LLM(["a", "b"], completion)
+    with pytest.raises(RuntimeError, match="every model failed: a: TimeoutError"):
+        llm([])
+    assert llm.models == ["a", "b"]
+    with pytest.raises(RuntimeError, match="no models configured"):
+        sh.LLM([], completion)([])
+
+
+def test_models_from_env():
+    assert sh.models_from_env({}) == sh._dedupe([sh.DEFAULT_MODEL, *sh.DEFAULT_FALLBACK_MODELS])
+    assert sh.models_from_env({"LLM_MODEL": "gemini/a", "LLM_FALLBACK_MODELS": " gemini/b, ,gemini/a "})         == ["gemini/a", "gemini/b"]
+    assert sh.models_from_env({"LLM_MODEL": "gemini/a"}) == ["gemini/a", *sh.DEFAULT_FALLBACK_MODELS]
+
+
+def test_heal_counts_llm_errors_as_attempts(broken_repo):
+    replies = iter([RuntimeError("every model failed: 404"), f"```diff\n{GOOD_DIFF}```"])
+
+    def llm(messages):
+        r = next(replies)
+        if isinstance(r, Exception):
+            raise r
+        return r
+    res = sh.heal([DEMO_SUITE], sh.Failure(), broken_repo, ["calc.py"], llm)
+    assert res.passed and res.llm_calls == 2
+    assert [a.status for a in res.attempts] == ["llm-error", "passed"]
+    assert "404" in res.attempts[0].output
+
+
+def test_fix_reports_model_that_answered(broken_repo, monkeypatch):
+    monkeypatch.setattr(sh, "SUITES", {**sh.SUITES, "demo": DEMO_SUITE})
+    gh = FakeGitHub(jobs=[{"id": 9, "name": "demo", "conclusion": "failure"}], logs={9: "FAILED"})
+
+    def completion(model, **kw):
+        if model == "gemini/retired":
+            raise NotFoundError("404 NOT_FOUND")
+        return _reply(f"EXPLANATION: plus\n```diff\n{GOOD_DIFF}```")
+    assert sh.fix(event(), gh, ["demo"], ["gemini/retired", "gemini/live"], repo_root=broken_repo,
+                  completion=completion) == 0
+    assert "**Model:** `gemini/live`" in gh.posted("/pulls")[0]["body"]
+
+
+def test_repo_root_env_override(tmp_path, monkeypatch):
+    import importlib
+    monkeypatch.setenv("HEXAGO_REPO_ROOT", str(tmp_path))
+    try:
+        assert importlib.reload(sh).REPO_ROOT == tmp_path.resolve()
+    finally:
+        monkeypatch.delenv("HEXAGO_REPO_ROOT")
+        importlib.reload(sh)

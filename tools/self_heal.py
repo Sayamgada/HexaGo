@@ -41,14 +41,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# The workflow runs trusted tools from the default branch against the failing
+# checkout, so the repo being healed can differ from this file's repo.
+REPO_ROOT = Path(os.environ.get("HEXAGO_REPO_ROOT") or Path(__file__).resolve().parent.parent).resolve()
 
 MAX_ATTEMPTS = 3
 MAX_FILES_PER_PATCH = 5
 CONTEXT_CHAR_CAP = 60_000
 LOG_EXCERPT_CAP = 12_000
 OUTPUT_TAIL_CAP = 6_000
-DEFAULT_MODEL = "gemini/gemini-2.0-flash"
+DEFAULT_MODEL = "gemini/gemini-3.8-flash"
+# Tried in order after LLM_MODEL (override with LLM_FALLBACK_MODELS, comma-separated).
+DEFAULT_FALLBACK_MODELS = ("gemini/gemini-3.8-flash",)
 AUTOFIX_PREFIX = "autofix/"
 AUTOFIX_MARKER = "[ai-autofix"  # in autofix PR titles, hence squash-merge commits
 LABEL_OK = "ai-autofix"
@@ -447,7 +451,7 @@ Rules:
 @dataclass
 class Attempt:
     number: int
-    status: str            # passed | failed | rejected | apply-failed | no-diff
+    status: str            # passed | failed | rejected | apply-failed | no-diff | llm-error
     explanation: str = ""
     diff: str = ""
     files: list[str] = field(default_factory=list)
@@ -514,6 +518,41 @@ def call_llm(messages: list[dict], model: str,
         return resp.choices[0].message.content or ""
     except (AttributeError, IndexError, KeyError):
         return resp["choices"][0]["message"]["content"] or ""
+
+
+RETIRED_MODEL_RE = re.compile(r"404|NotFound|not found|no longer available|deprecated", re.I)
+
+
+class LLM:
+    """Calls the first model that works; a retired model (404) is dropped for the run."""
+
+    def __init__(self, models: list[str], completion: Callable | None = None):
+        self.models = _dedupe([m for m in models if m])
+        self.completion = completion
+        self.used: str | None = None
+        self.errors: list[str] = []
+
+    def __call__(self, messages: list[dict]) -> str:
+        failures = []
+        for model in list(self.models):
+            try:
+                text = call_llm(messages, model, self.completion)
+            except Exception as e:  # provider errors vary by backend
+                msg = f"{model}: {type(e).__name__}: {e}"[:600]
+                failures.append(msg)
+                self.errors.append(msg)
+                if RETIRED_MODEL_RE.search(f"{type(e).__name__} {e}"):
+                    self.models.remove(model)
+                continue
+            self.used = model
+            return text
+        raise RuntimeError("every model failed: " + " | ".join(failures or ["no models configured"]))
+
+
+def models_from_env(env: dict[str, str] | None = None) -> list[str]:
+    env = dict(os.environ if env is None else env)
+    fallbacks = [m.strip() for m in (env.get("LLM_FALLBACK_MODELS") or "").split(",") if m.strip()]
+    return _dedupe([env.get("LLM_MODEL") or DEFAULT_MODEL, *(fallbacks or DEFAULT_FALLBACK_MODELS)])
 
 
 # ---------------------------------------------------------------------------
@@ -671,8 +710,12 @@ def heal(suites: list[Suite], failure: Failure, repo_root: Path, tracked: list[s
     history: list[Attempt] = []
     after, calls = before, 0
     for n in range(1, max_attempts + 1):
-        reply = llm(build_messages(suites, failure, before, context, history))
         calls += 1
+        try:
+            reply = llm(build_messages(suites, failure, before, context, history))
+        except Exception as e:  # counts as a failed attempt; never crash the run
+            history.append(Attempt(n, "llm-error", output=f"LLM call failed: {e}"[:4_000]))
+            continue
         diff, explanation = parse_llm_response(reply)
         attempt = Attempt(n, "no-diff", explanation, diff, patch_files(diff).files)
         history.append(attempt)
@@ -893,20 +936,22 @@ def plan(ev: Event, gh: GitHub) -> dict[str, str]:
     }
 
 
-def fix(ev: Event, gh: GitHub, suite_names: list[str], model: str,
+def fix(ev: Event, gh: GitHub, suite_names: list[str], models: str | list[str],
         repo_root: Path = REPO_ROOT, completion: Callable | None = None) -> int:
+    llm = LLM([models] if isinstance(models, str) else list(models), completion)
     suites = [SUITES[n] for n in suite_names if n in SUITES]
     names = {s.name for s in suites}
     logs = [gh.job_log(j["id"]) for j in gh.failed_jobs(ev.run_id)
             if (s := suite_for_job(j.get("name", ""))) and s.name in names]
     failure = merge_failures([parse_failures(t) for t in logs])
     result = heal(suites, failure, repo_root, tracked_files(repo_root),
-                  lambda msgs: call_llm(msgs, model, completion), ev.base_sha)
+                  llm, ev.base_sha)
     if not result.reproduced:
         write_summary(f"### Self-heal: nothing to do\nSuites `{','.join(names)}` pass in the "
                       f"sandbox at `{ev.head_sha[:7]}`; the failure did not reproduce (flaky?). "
                       "No LLM call made.")
         return 0
+    model = llm.used or ", ".join(llm.models) or "none available"
     outcome = publish(gh, ev, suites, failure, result, model, repo_root)
     write_summary(
         f"### Self-heal for run [{ev.run_id}]({ev.run_url})\n"
@@ -935,11 +980,11 @@ def main(argv: list[str] | None = None) -> int:
         if out["skip"] == "true":
             write_summary(f"### Self-heal skipped\n{out['reason']}")
         return 0
-    if not os.environ.get("GEMINI_API_KEY") and "gemini" in os.environ.get("LLM_MODEL", DEFAULT_MODEL):
+    models = models_from_env()
+    if not os.environ.get("GEMINI_API_KEY") and all(m.startswith("gemini/") for m in models):
         write_summary("### Self-heal skipped\nGEMINI_API_KEY secret is not set.")
         return 1
-    model = os.environ.get("LLM_MODEL") or DEFAULT_MODEL
-    return fix(ev, gh, [s for s in args.suites.split(",") if s], model)
+    return fix(ev, gh, [s for s in args.suites.split(",") if s], models)
 
 
 if __name__ == "__main__":

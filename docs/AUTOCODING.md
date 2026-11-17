@@ -64,7 +64,9 @@ Caching: Go modules (`setup-go`), pip (`setup-python`) and the Flutter SDK + pub
 
 ## 4. Self-healing LLM sandbox ([`self-heal.yml`](../.github/workflows/self-heal.yml))
 Triggered by `workflow_run` when **CI** ends in `failure` on `main` or a same-repo PR.
-[`tools/self_heal.py`](../tools/self_heal.py) runs in two phases:
+[`tools/self_heal.py`](../tools/self_heal.py) runs in two phases. The healer itself is always
+checked out from `main` (trusted code) and operates on the failing commit, so a PR branched
+from an older `main`, or one that edits `tools/`, can't change how it is healed.
 
 1. **plan**: checks the guardrails, maps each failed job to a suite (`go`, `python`,
    `flutter`, `tools`, `coverage-gate`, `test-first`), and sets up only those toolchains.
@@ -76,8 +78,10 @@ Triggered by `workflow_run` when **CI** ends in `failure` on `main` or a same-re
      (capped at ~60k chars);
    - reruns the failing suite to confirm it reproduces. If it passes, the failure was flaky
      and **no LLM call is made**;
-   - asks the LLM through LiteLLM (`LLM_MODEL`, default `gemini/gemini-2.0-flash`, key
-     `GEMINI_API_KEY`) for a short explanation and a minimal unified diff;
+   - asks the LLM through LiteLLM (key `GEMINI_API_KEY`) for a short explanation and a
+     minimal unified diff. Models are tried in order: `LLM_MODEL`, then `LLM_FALLBACK_MODELS`
+     (default `gemini/gemini-3.8-flash`). A retired model (404) is dropped for the run, and
+     an LLM error counts as a failed attempt instead of crashing the run;
    - checks the diff against the guardrails, applies it (`git apply --recount`, falling back
      to `patch --fuzz`), and reruns **only the failing suites**;
    - loops up to **3 attempts**, each time sending back the previous patch and its new
@@ -112,7 +116,7 @@ merge (see the live URLs in [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md)).
 | Setting | Where | Why |
 |---|---|---|
 | `GEMINI_API_KEY` secret | Settings → Secrets and variables → Actions | LLM calls |
-| `LLM_MODEL` variable (optional) | Settings → Secrets and variables → Actions → Variables | Override the default model |
+| `LLM_MODEL` / `LLM_FALLBACK_MODELS` variables (optional) | Settings → Secrets and variables → Actions → Variables | Primary model and comma-separated fallbacks |
 | Workflow permissions: **Read and write** + **Allow GitHub Actions to create and approve pull requests** | Settings → Actions → General | Push `autofix/*`, open PRs |
 | **Allow auto-merge** | Settings → General → Pull Requests | Native auto-merge on autofix PRs |
 | `AUTOFIX_TOKEN` secret (optional, fine-grained PAT) | Secrets | Pushes from `GITHUB_TOKEN` don't trigger workflows. With a PAT, autofix PRs get normal `pull_request` CI |
