@@ -25,6 +25,7 @@ def test_describe_masks_password():
     ("Error -2 connecting to red-abc:6379. Name or service not known.", "region"),
     ("Error 11001 connecting to red-abc:6379. getaddrinfo failed.", "region"),
     ("Error 111 connecting to 1.2.3.4:6379. Connection refused.", "refused"),
+    ("Error 111 connecting to 127.0.0.1:1. Connect call failed ('127.0.0.1', 1).", "refused"),
     ("Connection closed by server.", "TLS"),
     ("[SSL: WRONG_VERSION_NUMBER] wrong version number", "redis://"),
     ("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed", "certificate"),

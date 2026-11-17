@@ -61,7 +61,7 @@ def hint(err: BaseException) -> str:
     if any(s in e for s in ("wrongpass", "authentication required", "invalid password", "noauth",
                             "invalid username-password", "without any password configured")):
         return "Authentication failed: the password in REDIS_URL is wrong or missing. Copy the URL again from the Key Value page."
-    if "refused" in e:
+    if "refused" in e or "connect call failed" in e or "error 111 " in e or "error 10061 " in e:
         return "Connection refused: the host is reachable but nothing accepts connections on that port (wrong host/port)."
     if "closed by server" in e or "connection reset" in e or "broken pipe" in e:
         return ("Server closed the connection. An external Render Key Value URL needs TLS (rediss://) and this "
