@@ -748,7 +748,7 @@ def test_llm_keeps_model_after_transient_error_and_raises_when_all_fail():
     def completion(model, **kw):
         raise TimeoutError("read timed out")
 
-    llm = sh.LLM(["a", "b"], completion)
+    llm = sh.LLM(["a", "b"], completion, sleep=lambda s: None, delays=(1,))
     with pytest.raises(RuntimeError, match="every model failed: a: TimeoutError"):
         llm([])
     assert llm.models == ["a", "b"]
@@ -825,3 +825,31 @@ def test_call_llm_reraises_other_errors_without_retry():
     with pytest.raises(TimeoutError):
         sh.call_llm([], "m", completion)
     assert len(calls) == 1
+
+
+class ServiceUnavailableError(Exception):
+    pass
+
+
+def test_llm_retries_transient_errors_with_backoff():
+    waits, calls = [], []
+
+    def completion(model, **kw):
+        calls.append(model)
+        if len(calls) < 3:
+            raise ServiceUnavailableError('{"code": 503, "message": "high demand", "status": "UNAVAILABLE"}')
+        return _reply("ok")
+    llm = sh.LLM(["gemini/x"], completion, sleep=waits.append, delays=(15, 30, 60))
+    assert llm([]) == "ok" and waits == [15, 30] and llm.models == ["gemini/x"]
+
+
+def test_llm_gives_up_after_retries_then_tries_next_model():
+    waits = []
+
+    def completion(model, **kw):
+        if model == "busy":
+            raise ServiceUnavailableError("503 UNAVAILABLE")
+        return _reply("from " + model)
+    llm = sh.LLM(["busy", "spare"], completion, sleep=waits.append, delays=(1, 2))
+    assert llm([]) == "from spare" and waits == [1, 2]
+    assert llm.models == ["busy", "spare"]  # busy is not retired

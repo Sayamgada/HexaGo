@@ -532,29 +532,48 @@ def call_llm(messages: list[dict], model: str,
 RETIRED_MODEL_RE = re.compile(r"404|NotFound|not found|no longer available|deprecated", re.I)
 
 
-class LLM:
-    """Calls the first model that works; a retired model (404) is dropped for the run."""
+TRANSIENT_RE = re.compile(
+    r"(429|500|502|503|504)|UNAVAILABLE|overloaded|high demand|RateLimit|"
+    r"ServiceUnavailable|InternalServerError|Timeout|APIConnectionError", re.I)
+RETRY_DELAYS_S = (15, 30, 60, 90)
 
-    def __init__(self, models: list[str], completion: Callable | None = None):
+
+class LLM:
+    """Calls the first model that works.
+
+    Transient errors (429/5xx/timeouts) are retried with backoff on the same
+    model; a retired model (404) is dropped for the rest of the run.
+    """
+
+    def __init__(self, models: list[str], completion: Callable | None = None,
+                 sleep: Callable[[float], None] = time.sleep,
+                 delays: tuple[float, ...] = RETRY_DELAYS_S):
         self.models = _dedupe([m for m in models if m])
         self.completion = completion
+        self.sleep, self.delays = sleep, delays
         self.used: str | None = None
         self.errors: list[str] = []
 
     def __call__(self, messages: list[dict]) -> str:
         failures = []
         for model in list(self.models):
-            try:
-                text = call_llm(messages, model, self.completion)
-            except Exception as e:  # provider errors vary by backend
-                msg = f"{model}: {type(e).__name__}: {e}"[:600]
-                failures.append(msg)
-                self.errors.append(msg)
-                if RETIRED_MODEL_RE.search(f"{type(e).__name__} {e}"):
-                    self.models.remove(model)
-                continue
-            self.used = model
-            return text
+            for wait in (*self.delays, None):
+                try:
+                    text = call_llm(messages, model, self.completion)
+                except Exception as e:  # provider errors vary by backend
+                    kind = f"{type(e).__name__} {e}"
+                    msg = f"{model}: {type(e).__name__}: {e}"[:600]
+                    self.errors.append(msg)
+                    if RETIRED_MODEL_RE.search(kind) and not TRANSIENT_RE.search(kind):
+                        self.models.remove(model)
+                    elif TRANSIENT_RE.search(kind) and wait is not None:
+                        print(f"self-heal: {model} transient error, retrying in {wait}s", flush=True)
+                        self.sleep(wait)
+                        continue
+                    failures.append(msg)
+                    break
+                self.used = model
+                return text
         raise RuntimeError("every model failed: " + " | ".join(failures or ["no models configured"]))
 
 
