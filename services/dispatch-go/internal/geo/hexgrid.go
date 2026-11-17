@@ -69,7 +69,7 @@ func (g *HexGrid) Rings(origin Cell, k int) ([][]Cell, error) {
 	q0, r0 := decodeAxial(origin)
 	rings := make([][]Cell, k+1)
 	rings[0] = []Cell{origin}
-	for radius := 1; radius <= k; radius++ {
+	for radius := 1; radius < k; radius++ {
 		ring := make([]Cell, 0, 6*radius)
 		q, r := q0+hexDirs[4][0]*radius, r0+hexDirs[4][1]*radius
 		for side := 0; side < 6; side++ {
