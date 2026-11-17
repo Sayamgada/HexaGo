@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -39,6 +40,14 @@ class _FleetMapState extends ConsumerState<FleetMap> {
   bool _ready = false;
   bool _fitted = false;
 
+  /// Tiles are held back until the camera has settled (fitted to the fleet,
+  /// or [_fitTimeout] without a fleet). Tiles requested for the initial
+  /// camera and replaced mid-flight by the fit were left unpainted by
+  /// flutter_map on the live site until the next manual pan/zoom.
+  bool _settled = false;
+  Timer? _settleTimer;
+  static const _fitTimeout = Duration(seconds: 4);
+
   void _attach(FleetTracker tracker) {
     if (identical(tracker, _tracker)) return;
     _tracker?.removeListener(_maybeFit);
@@ -52,10 +61,18 @@ class _FleetMapState extends ConsumerState<FleetMap> {
     if (bounds == null) return;
     _fitted = true;
     _map.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.fromLTRB(40, 70, 40, 50), maxZoom: 14));
+    _settle();
+  }
+
+  void _settle() {
+    _settleTimer?.cancel();
+    if (_settled || !mounted) return;
+    setState(() => _settled = true);
   }
 
   @override
   void dispose() {
+    _settleTimer?.cancel();
     _tracker?.removeListener(_maybeFit);
     _map.dispose();
     super.dispose();
@@ -64,7 +81,7 @@ class _FleetMapState extends ConsumerState<FleetMap> {
   @override
   Widget build(BuildContext context) {
     _attach(ref.watch(fleetTrackerProvider));
-    final basemap = ref.watch(showMapTilesProvider) ? ref.watch(basemapProvider).value : null;
+    final basemap = ref.watch(showMapTilesProvider) && _settled ? ref.watch(basemapProvider).value : null;
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Stack(
@@ -87,6 +104,7 @@ class _FleetMapState extends ConsumerState<FleetMap> {
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
               onMapReady: () {
                 _ready = true;
+                _settleTimer = Timer(_fitTimeout, _settle);
                 _maybeFit();
               },
             ),
