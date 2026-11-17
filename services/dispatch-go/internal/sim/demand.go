@@ -48,11 +48,13 @@ const hotspotShare = 0.85
 // on a ride at a time-of-day factor of 1 (Little's law: busy = rate × ride time).
 const (
 	DemoTargetBusy = 0.5
-	avgRideMinutes = 12.0 // effective accept + pickup + trip + dwell per request, calibrated by TestSteadyStateBusyShareWithAutoDemand
+	avgRideMinutes = 25.0 // conservative starting guess (live OSRM rides take ~30 min, straight-line ones ~12); auto demand then measures the real value
 	curveAmplitude = 0.15 // the demo keeps 15% of the real day/night swing
 )
 
-// AutoDemandPerMin is the base demand that keeps ~50% of `drivers` busy.
+// AutoDemandPerMin is the starting base demand for `drivers`: ~50% busy if
+// rides take avgRideMinutes. With Options.AutoDemand the simulator then
+// re-sizes it from measured ride times.
 func AutoDemandPerMin(drivers int) float64 {
 	return float64(drivers) * DemoTargetBusy / avgRideMinutes
 }

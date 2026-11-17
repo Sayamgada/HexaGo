@@ -68,7 +68,7 @@ func TestDemoCurveIsDampedButShaped(t *testing.T) {
 
 func TestAutoDemandScalesWithFleet(t *testing.T) {
 	a, b := AutoDemandPerMin(300), AutoDemandPerMin(600)
-	if a < 8 || a > 30 {
+	if a < 4 || a > 30 {
 		t.Fatalf("auto demand for 300 drivers = %.1f/min", a)
 	}
 	if math.Abs(b-2*a) > 1e-9 || AutoDemandPerMin(0) != 0 {
@@ -257,7 +257,7 @@ func TestAutoDemandAdaptsToLongerRoutes(t *testing.T) {
 		t.Skip("long simulation skipped in -short mode")
 	}
 	fixed := newHarness(t, 300, func(o *Options) {
-		o.Router, o.DemandPerMin = detourRouter{2}, AutoDemandPerMin(300)
+		o.Router, o.DemandPerMin = detourRouter{2}, 12.5 // the fixed default that ran the live fleet at 86%
 	})
 	stFixed := runDemo(fixed, 45*time.Minute, 20*time.Minute)
 
@@ -274,7 +274,7 @@ func TestAutoDemandAdaptsToLongerRoutes(t *testing.T) {
 	if st.busy < 0.40 || st.busy > 0.60 {
 		t.Errorf("auto demand busy %.0f%%, want 40-60%%", st.busy*100)
 	}
-	if !v.AutoDemand || v.DemandPerMin >= AutoDemandPerMin(300) {
+	if !v.AutoDemand || v.DemandPerMin >= 12.5 {
 		t.Errorf("auto demand should have lowered the base: %+v", v)
 	}
 }
@@ -285,5 +285,23 @@ func TestExplicitDemandDisablesAutoTuning(t *testing.T) {
 	v, err := h.sim.Configure(context.Background(), ConfigInput{DemandPerMin: &rate})
 	if err != nil || v.AutoDemand || v.DemandPerMin != 3 {
 		t.Fatalf("explicit demand must switch auto off: %v %+v", err, v)
+	}
+}
+
+// After a restart only short rides have finished, so an estimate built from
+// completed rides alone is too optimistic and overloads the fleet. The
+// estimate must count time on rides still in progress.
+func TestAutoDemandDoesNotOvershootAfterRestart(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long simulation skipped in -short mode")
+	}
+	h := newHarness(t, 300, func(o *Options) {
+		o.Router, o.DemandPerMin, o.AutoDemand = detourRouter{2.5}, AutoDemandPerMin(300), true
+	})
+	st := runDemo(h, 25*time.Minute, 10*time.Minute)
+	v := h.sim.Status()
+	t.Logf("2.5x routes, 25-35 min after start: busy %.0f%% (base %.1f/min, ride estimate %.1f min)", st.busy*100, v.DemandPerMin, v.AvgRideMinutes)
+	if st.busy > 0.65 {
+		t.Errorf("busy %.0f%% shortly after start: auto demand overshoots", st.busy*100)
 	}
 }

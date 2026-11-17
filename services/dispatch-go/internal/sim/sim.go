@@ -73,7 +73,6 @@ type simRide struct {
 	pickup  geo.Point
 	dropoff geo.Point
 	fresh   bool // accepted this tick: stays put so "accepted" is visible for a full tick
-	start   time.Time
 }
 
 type incidentPhase int
@@ -448,6 +447,7 @@ func (s *Sim) Step(ctx context.Context) {
 	}
 	s.reconcileFleet()
 
+	busy := 0
 	drivers := make([]stream.Driver, 0, len(s.order))
 	for _, d := range s.order {
 		wantOffline := d.ride == nil && now.Before(d.offlineUntil)
@@ -492,13 +492,15 @@ func (s *Sim) Step(ctx context.Context) {
 			})
 		}
 		if d.ride != nil {
+			busy++
 			rideMsgs = append(rideMsgs, s.rideUpdate(d, wd))
 			if d.ride.status.Terminal() {
-				s.rideFinished(now.Sub(d.ride.start))
+				s.rideFinished()
 				d.ride = nil
 			}
 		}
 	}
+	s.accrue(busy, s.tick)
 	s.mu.Unlock()
 
 	for _, e := range effects {
@@ -564,7 +566,8 @@ func (s *Sim) intake(r store.Ride, now time.Time) (stream.RideUpdate, bool) {
 	if !ok || r.Status != store.RideMatched || d.busy() {
 		return stream.RideUpdate{}, false
 	}
-	d.ride = &simRide{id: r.ID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true, start: now}
+	d.ride = &simRide{id: r.ID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true}
+	s.rideStarted()
 	s.clearRoute(d)
 	d.dwell = time.Time{}
 	d.pending = s.planner.request(d.pos, r.Pickup, true, now.Add(s.routeWait))
@@ -581,7 +584,7 @@ func (s *Sim) clearRoute(d *simDriver) {
 
 func (s *Sim) dropRide(d *simDriver, now time.Time) {
 	if d.ride != nil {
-		s.rideFinished(now.Sub(d.ride.start))
+		s.rideFinished()
 	}
 	d.ride, d.incident = nil, nil
 	s.clearRoute(d)
@@ -936,7 +939,7 @@ func (s *Sim) Status() ConfigView {
 		Running: s.running, Drivers: s.target, LiveDrivers: len(s.order), DemandPerMin: s.base,
 		CurrentPerMin: round(s.demandRateLocked(now), 2), TimeOfDay: round(s.curve(now), 3),
 		SpeedFactor: s.speedFactorLocked(), Scenarios: []ScenarioInfo{}, Spikes: []SpikeInfo{}, Router: "straight_line",
-		AutoDemand: s.auto.on, AvgRideMinutes: round(s.auto.rideMin, 2), MatchShare: round(s.auto.matchShare, 3),
+		AutoDemand: s.auto.on, AvgRideMinutes: round(s.auto.rideMinutes(), 2), MatchShare: round(s.auto.matchShare, 3),
 	}
 	for _, d := range s.order {
 		if d.busy() {

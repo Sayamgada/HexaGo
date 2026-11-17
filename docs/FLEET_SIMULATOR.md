@@ -55,9 +55,12 @@ through the public API are driven too when a simulated driver is matched.
 Requests per minute = base × demo time-of-day factor × scenario multipliers + spikes.
 
 - **Base demand**: `SIM_DEMAND_PER_MIN`, default `auto`. Auto starts at drivers × 0.5 ÷
-  12 min (12.5/min for 300 drivers) and then re-sizes itself every 30 s by Little's
-  law: base = 0.5 × active drivers ÷ (measured busy minutes per ride × measured match
-  share), frozen while a scenario or spike is active. This keeps roughly **40–60% of
+  25 min (6/min for 300 drivers) and then re-sizes itself every 30 s by Little's
+  law: base = 0.5 × active drivers ÷ (busy minutes per ride × match share), frozen
+  while a scenario or spike is active. Busy minutes per ride = decayed busy-driver
+  minutes ÷ mean of rides started and finished (~10 min memory), which counts rides
+  still in progress; if more than 60% of drivers are busy, demand is cut by
+  0.5 ÷ busy share immediately. This keeps roughly **40–60% of
   drivers busy** whether rides follow long OSRM road routes or straight lines (live
   OSRM rides take about twice as long; a fixed 12.5/min ran the fleet at 86% busy).
   `GET /v1/sim/config` shows `auto_demand`, `avg_ride_minutes` and `match_share`;
