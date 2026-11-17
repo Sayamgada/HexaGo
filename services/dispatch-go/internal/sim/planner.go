@@ -50,6 +50,9 @@ type planner struct {
 
 func newPlanner(r Router) *planner {
 	_, instant := r.(StraightLine)
+	if _, ok := r.(interface{ instant() }); ok { // synchronous test routers
+		instant = true
+	}
 	return &planner{router: r, instant: instant, high: make(chan *ticket, 64), low: make(chan *ticket, 8)}
 }
 

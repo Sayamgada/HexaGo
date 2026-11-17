@@ -105,7 +105,7 @@ func main() {
 		}
 		s, err := sim.New(sim.Options{
 			Service: svc, Publisher: hub, Router: router, Drivers: cfg.SimDrivers,
-			DemandPerMin: demand, Center: center, Telemetry: batcher, Registry: reg,
+			DemandPerMin: demand, AutoDemand: cfg.SimDemandPerMin == 0, Center: center, Telemetry: batcher, Registry: reg,
 		})
 		if err != nil {
 			log.Fatalf("simulator: %v", err)

@@ -53,6 +53,10 @@ type Options struct {
 	Registry     prometheus.Registerer
 	// RandomSpikesOff disables spontaneous demand spikes (tests).
 	RandomSpikesOff bool
+	// AutoDemand re-sizes the base demand every 30 s from the measured ride
+	// time and match share so about DemoTargetBusy of the fleet is busy
+	// (Little's law). DemandPerMin is only the starting point.
+	AutoDemand bool
 }
 
 type purpose int
@@ -69,6 +73,7 @@ type simRide struct {
 	pickup  geo.Point
 	dropoff geo.Point
 	fresh   bool // accepted this tick: stays put so "accepted" is visible for a full tick
+	start   time.Time
 }
 
 type incidentPhase int
@@ -165,6 +170,7 @@ type Sim struct {
 	scenarios []scenarioState
 	spikes    []spike
 	open      []openRequest
+	auto      autoDemand
 	running   bool
 	stats     tickStats
 
@@ -224,6 +230,7 @@ func New(o Options) (*Sim, error) {
 		spikesOn: !o.RandomSpikesOff,
 		rng:      rand.New(rand.NewPCG(o.Seed, o.Seed^0x9E3779B97F4A7C15)),
 		drivers:  map[string]*simDriver{}, target: o.Drivers, base: o.DemandPerMin,
+		auto: newAutoDemand(o.AutoDemand),
 	}
 	for _, h := range baseHotspots {
 		s.hotspots = append(s.hotspots, hotspot{h.name, shift(h.at, o.Center), h.weight})
@@ -487,6 +494,7 @@ func (s *Sim) Step(ctx context.Context) {
 		if d.ride != nil {
 			rideMsgs = append(rideMsgs, s.rideUpdate(d, wd))
 			if d.ride.status.Terminal() {
+				s.rideFinished(now.Sub(d.ride.start))
 				d.ride = nil
 			}
 		}
@@ -556,7 +564,7 @@ func (s *Sim) intake(r store.Ride, now time.Time) (stream.RideUpdate, bool) {
 	if !ok || r.Status != store.RideMatched || d.busy() {
 		return stream.RideUpdate{}, false
 	}
-	d.ride = &simRide{id: r.ID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true}
+	d.ride = &simRide{id: r.ID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true, start: now}
 	s.clearRoute(d)
 	d.dwell = time.Time{}
 	d.pending = s.planner.request(d.pos, r.Pickup, true, now.Add(s.routeWait))
@@ -572,6 +580,9 @@ func (s *Sim) clearRoute(d *simDriver) {
 }
 
 func (s *Sim) dropRide(d *simDriver, now time.Time) {
+	if d.ride != nil {
+		s.rideFinished(now.Sub(d.ride.start))
+	}
 	d.ride, d.incident = nil, nil
 	s.clearRoute(d)
 	d.speed = 0
@@ -780,6 +791,7 @@ func (s *Sim) SpeedFactor() float64 {
 func (s *Sim) SetDemandPerMin(v float64) {
 	s.mu.Lock()
 	s.base = math.Max(0, v)
+	s.auto.on = false
 	s.mu.Unlock()
 }
 
@@ -796,6 +808,7 @@ func (s *Sim) DemandTick(ctx context.Context) {
 	now := s.now()
 	s.mu.Lock()
 	s.expire(now)
+	s.retune(now)
 	if s.spikesOn && s.rng.Float64() < s.tick.Seconds()/600 {
 		h := s.pickHotspot()
 		dur := time.Duration(120+s.rng.IntN(180)) * time.Second
@@ -851,6 +864,9 @@ func (s *Sim) createRides(ctx context.Context, reqs []rideRequest, now time.Time
 			s.log.Printf("WARN sim: create ride: %v", err)
 			continue
 		}
+		s.mu.Lock()
+		s.countRequest(true, view.Match != nil)
+		s.mu.Unlock()
 		if view.Match == nil {
 			s.mu.Lock()
 			s.open = append(s.open, openRequest{id: view.Ride.ID, created: now, tried: now})
@@ -900,6 +916,9 @@ type ConfigView struct {
 	DemandPerMin   float64        `json:"demand_per_min"`
 	CurrentPerMin  float64        `json:"current_demand_per_min"`
 	TimeOfDay      float64        `json:"time_of_day_factor"`
+	AutoDemand     bool           `json:"auto_demand"`
+	AvgRideMinutes float64        `json:"avg_ride_minutes"`
+	MatchShare     float64        `json:"match_share"`
 	SpeedFactor    float64        `json:"speed_factor"`
 	Scenarios      []ScenarioInfo `json:"scenarios"`
 	Spikes         []SpikeInfo    `json:"spikes"`
@@ -917,6 +936,7 @@ func (s *Sim) Status() ConfigView {
 		Running: s.running, Drivers: s.target, LiveDrivers: len(s.order), DemandPerMin: s.base,
 		CurrentPerMin: round(s.demandRateLocked(now), 2), TimeOfDay: round(s.curve(now), 3),
 		SpeedFactor: s.speedFactorLocked(), Scenarios: []ScenarioInfo{}, Spikes: []SpikeInfo{}, Router: "straight_line",
+		AutoDemand: s.auto.on, AvgRideMinutes: round(s.auto.rideMin, 2), MatchShare: round(s.auto.matchShare, 3),
 	}
 	for _, d := range s.order {
 		if d.busy() {
@@ -967,6 +987,7 @@ func (s *Sim) Configure(ctx context.Context, in ConfigInput) (ConfigView, error)
 	}
 	if in.DemandPerMin != nil {
 		s.base = *in.DemandPerMin
+		s.auto.on = false // an explicit demand overrides auto-sizing
 	}
 	var spikeRate float64
 	if in.SpikeLat != nil {
@@ -990,6 +1011,11 @@ func (s *Sim) retryOpen(ctx context.Context, ids []string) {
 		switch {
 		case err == nil && view.Match != nil, errors.Is(err, dispatch.ErrConflict), errors.Is(err, dispatch.ErrNotFound):
 			done[id] = true
+			if err == nil {
+				s.mu.Lock()
+				s.countRequest(false, true)
+				s.mu.Unlock()
+			}
 		case err != nil:
 			s.log.Printf("WARN sim: retry request %s: %v", id, err)
 		}

@@ -142,7 +142,7 @@ func TestSteadyStateBusyShareWithAutoDemand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("long simulation skipped in -short mode")
 	}
-	h := newHarness(t, 300, func(o *Options) { o.DemandPerMin = AutoDemandPerMin(300) })
+	h := newHarness(t, 300, func(o *Options) { o.DemandPerMin = AutoDemandPerMin(300); o.AutoDemand = true })
 	st := runDemo(h, 45*time.Minute, 30*time.Minute)
 	t.Logf("300 drivers, %.1f req/min: busy %.0f%%, %d requests, matched first try %.1f%%, eventually %.1f%%, %d upgrades",
 		AutoDemandPerMin(300), st.busy*100, st.requests, st.firstTry*100, st.eventual*100, st.upgraded)
@@ -234,5 +234,56 @@ func TestConcertExitIsABigSpike(t *testing.T) {
 	}
 	if ConcertBurst < 40 || h.sim.DemandRate()-base < 40 {
 		t.Fatalf("concert burst %d, extra demand %.1f/min", ConcertBurst, h.sim.DemandRate()-base)
+	}
+}
+
+// detourRouter makes every route roughly `factor` times the straight line by
+// bending it through a sideways midpoint, like real roads on OSRM.
+type detourRouter struct{ factor float64 }
+
+func (detourRouter) instant() {}
+
+func (r detourRouter) Route(_ context.Context, from, to geo.Point) ([]geo.Point, error) {
+	km := geo.HaversineKm(from, to)
+	side := km / 2 * math.Sqrt(r.factor*r.factor-1)
+	mid := geo.Point{Lat: (from.Lat + to.Lat) / 2, Lng: (from.Lng + to.Lng) / 2}
+	return []geo.Point{from, offsetKm(mid, side*0.7, side*0.7), to}, nil
+}
+
+// Live routes are longer than straight lines, so a fixed demand overloads the
+// fleet; auto demand measures ride time and match share and resizes itself.
+func TestAutoDemandAdaptsToLongerRoutes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long simulation skipped in -short mode")
+	}
+	fixed := newHarness(t, 300, func(o *Options) {
+		o.Router, o.DemandPerMin = detourRouter{2}, AutoDemandPerMin(300)
+	})
+	stFixed := runDemo(fixed, 45*time.Minute, 20*time.Minute)
+
+	h := newHarness(t, 300, func(o *Options) {
+		o.Router, o.DemandPerMin, o.AutoDemand = detourRouter{2}, AutoDemandPerMin(300), true
+	})
+	st := runDemo(h, 60*time.Minute, 30*time.Minute)
+	v := h.sim.Status()
+	t.Logf("2x routes: fixed demand busy %.0f%%; auto demand busy %.0f%% (base %.1f/min, ride %.1f min, match %.0f%%), eventual match %.1f%%",
+		stFixed.busy*100, st.busy*100, v.DemandPerMin, v.AvgRideMinutes, v.MatchShare*100, st.eventual*100)
+	if stFixed.busy <= 0.6 {
+		t.Fatalf("fixture too gentle: fixed demand only %.0f%% busy with 2x routes", stFixed.busy*100)
+	}
+	if st.busy < 0.40 || st.busy > 0.60 {
+		t.Errorf("auto demand busy %.0f%%, want 40-60%%", st.busy*100)
+	}
+	if !v.AutoDemand || v.DemandPerMin >= AutoDemandPerMin(300) {
+		t.Errorf("auto demand should have lowered the base: %+v", v)
+	}
+}
+
+func TestExplicitDemandDisablesAutoTuning(t *testing.T) {
+	h := newHarness(t, 10, func(o *Options) { o.AutoDemand = true })
+	rate := 3.0
+	v, err := h.sim.Configure(context.Background(), ConfigInput{DemandPerMin: &rate})
+	if err != nil || v.AutoDemand || v.DemandPerMin != 3 {
+		t.Fatalf("explicit demand must switch auto off: %v %+v", err, v)
 	}
 }
