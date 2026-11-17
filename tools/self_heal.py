@@ -487,6 +487,7 @@ def build_messages(suites: list[Suite], failure: Failure, before_output: str,
             {"role": "user", "content": "\n".join(user)}]
 
 
+UNSUPPORTED_PARAM_RE = re.compile(r"UnsupportedParams|does not support param", re.I)
 DIFF_BLOCK_RE = re.compile(r"```(?:diff|patch)?[ \t]*\n(.*?)```", re.S)
 
 
@@ -513,7 +514,15 @@ def call_llm(messages: list[dict], model: str,
     if completion is None:
         import litellm  # heavy import; only needed for real runs
         completion = litellm.completion
-    resp = completion(model=model, messages=messages, temperature=0, timeout=180)
+    kwargs = {"temperature": 0, "timeout": 180, "drop_params": True}
+    try:
+        resp = completion(model=model, messages=messages, **kwargs)
+    except Exception as e:
+        # Some models reject sampling params outright (e.g. gemini-3.x: temperature).
+        if not UNSUPPORTED_PARAM_RE.search(f"{type(e).__name__} {e}"):
+            raise
+        kwargs.pop("temperature")
+        resp = completion(model=model, messages=messages, **kwargs)
     try:
         return resp.choices[0].message.content or ""
     except (AttributeError, IndexError, KeyError):

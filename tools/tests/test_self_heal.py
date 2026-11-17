@@ -797,3 +797,31 @@ def test_repo_root_env_override(tmp_path, monkeypatch):
     finally:
         monkeypatch.delenv("HEXAGO_REPO_ROOT")
         importlib.reload(sh)
+
+
+class UnsupportedParamsError(Exception):
+    pass
+
+
+def test_call_llm_drops_params_and_retries_without_temperature():
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw)
+        if "temperature" in kw:
+            raise UnsupportedParamsError("gemini does not support parameters: ['temperature']")
+        return _reply("ok")
+    assert sh.call_llm([], "gemini/gemini-3.8-flash", completion) == "ok"
+    assert calls[0]["drop_params"] is True and calls[0]["temperature"] == 0
+    assert "temperature" not in calls[1] and calls[1]["drop_params"] is True
+
+
+def test_call_llm_reraises_other_errors_without_retry():
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw)
+        raise TimeoutError("slow")
+    with pytest.raises(TimeoutError):
+        sh.call_llm([], "m", completion)
+    assert len(calls) == 1
