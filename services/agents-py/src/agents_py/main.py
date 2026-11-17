@@ -1,14 +1,19 @@
+import asyncio
+import contextlib
 import re
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Histogram
 import litellm
 
+from src.agents_py.agents import ops_supervisor
+from src.agents_py.api import router as platform_router
 from src.agents_py.config import settings
+from src.agents_py.core import infra
 from src.agents_py.cors import parse_origins
 
 # Prometheus Instrumentation
@@ -27,7 +32,17 @@ REQUEST_LATENCY = Histogram(
 async def lifespan(app: FastAPI):
     # Setup LiteLLM parameters
     litellm.drop_params = True
-    yield
+    heartbeat = None
+    if settings.HEARTBEAT_INTERVAL_S > 0:
+        heartbeat = asyncio.create_task(ops_supervisor.heartbeat_loop(settings.HEARTBEAT_INTERVAL_S))
+    try:
+        yield
+    finally:
+        if heartbeat is not None:
+            heartbeat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
+        await infra.close()
 
 app = FastAPI(
     title="HexaGo Autonomous Agent Brain",
@@ -45,6 +60,9 @@ app.add_middleware(
     allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
     max_age=600,
 )
+
+app.include_router(platform_router)
+
 
 class IntentRequest(BaseModel):
     query: str
@@ -65,6 +83,8 @@ async def healthz():
         "service": "agents-py",
         "model": settings.LLM_MODEL,
         "demo_mode": settings.DEMO_MODE,
+        "llm_enabled": settings.LLM_ENABLED,
+        "components": await infra.status(),
         "city_center": {
             "lat": settings.CITY_CENTER_LAT,
             "lng": settings.CITY_CENTER_LNG,

@@ -46,6 +46,11 @@ flowchart TD
    - Built with Python 3.12, FastAPI, LangGraph, LiteLLM, SQLAlchemy, pgvector, and pytest-cov.
    - Houses the multi-agent graph workflows governing dispatch, safety, pricing, and settlements.
    - Connects to PostgreSQL with `pgvector` for agent episodic memory and semantic lookup.
+   - Agent platform core (`src/agents_py/core`): `llm.py` (LiteLLM wrapper with cost guardrails), `events.py` (`agent_events` audit rows + Ops feed frames), `memory.py` (pgvector recall with keyword fallback), `graph.py` (LangGraph helpers, `run_with_fallback`, `@agent` registration), `registry.py` (the 11-agent roster). `clients/dispatch.py` talks to dispatch-go.
+   - Endpoints (reached through the gateway): `GET /v1/agents` (roster with status, `decisions_last_hour`, `last_decision`, `fallback_rate`), `GET /v1/agents/events?limit=&agent=`, `GET /v1/agents/llm/budget`.
+   - Ops feed: agent events are published to Redis channel `ops` (plain frame) and to `hexago:stream` as `ops
+<frame>`, which dispatch-go relays to `/v1/stream` subscribers of the `ops` topic. The Ops Supervisor writes a deterministic heartbeat event every `HEARTBEAT_INTERVAL_S` (300 s).
+   - With no `DATABASE_URL` / `REDIS_URL` (or if they fail), events live in a 500-entry in-memory ring and guardrail counters in process memory; the service never crashes on missing infra.
 
 4. **Data & State Layer**:
    - **PostgreSQL + pgvector**: Relational storage for users, vehicles, trips, payments, and the append-only `agent_events` audit table.
@@ -96,14 +101,21 @@ HexaGo operates with eleven specialized autonomous agents coordinating via LangG
      - `/metrics`: Prometheus-compatible metrics endpoint.
 3. **Configuration & Secrets**:
    - Zero hardcoded secrets or environment targets. All runtime configuration is driven strictly through environment variables.
-   - Standardized keys: `LLM_MODEL`, `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `AGENTS_URL`, `DEMO_MODE`, `CITY_CENTER_LAT`, `CITY_CENTER_LNG`, `CORS_ALLOWED_ORIGINS`.
+   - Standardized keys: `LLM_MODEL`, `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `AGENTS_URL`, `DISPATCH_URL`, `DEMO_MODE`, `CITY_CENTER_LAT`, `CITY_CENTER_LNG`, `CORS_ALLOWED_ORIGINS`.
+   - LLM guardrail keys (agents-py): `LLM_ENABLED` (default `true`), `LLM_TIMEOUT_S` (`3`), `LLM_DAILY_CALL_LIMIT` (`300`), `LLM_DAILY_TOKEN_LIMIT` (`200000`), `LLM_MIN_INTERVAL_S` (`20`), `LLM_CACHE_TTL_S` (`600`), `EMBEDDING_MODEL` (`gemini/text-embedding-004`), `HEARTBEAT_INTERVAL_S` (`300`, `0` disables).
 4. **Pluggable LLM Backends**:
-   - All agent inference routes through LiteLLM configured by `LLM_MODEL` (e.g. `gemini/gemini-2.5-flash`, `openai/gpt-4o-mini`, `anthropic/claude-3-5-haiku`).
+   - All agent inference routes through LiteLLM configured by `LLM_MODEL` (default `gemini/gemini-2.0-flash`; e.g. `gemini/gemini-2.5-flash`, `openai/gpt-4o-mini`, `anthropic/claude-3-5-haiku`).
 5. **Deterministic Non-LLM Fallbacks**:
    - Every single agent must implement a reliable, deterministic non-LLM fallback algorithm. If the LLM provider times out, throttles, or returns malformed structured output, the platform continues uninterrupted without human intervention.
 6. **Immutable Audit Trail (`agent_events`)**:
    - Every agent invocation, input context, model decision, confidence score, token cost, and fallback activation is logged to the `agent_events` database table. The Ops Command Center visualizes this live stream.
-7. **Default Demo City**:
+7. **LLM Cost Guardrails (mandatory)**:
+   - Agents never call a provider directly: every completion goes through `core.llm.complete_json(prompt, schema, agent_name, fallback)` and every embedding through `LLMClient.embed`.
+   - Checks, in order: `LLM_ENABLED` (and a `GEMINI_API_KEY` for `gemini/*` models) → response cache (sha256 of model + prompt in Redis, 10 min TTL) → per-agent minimum interval `LLM_MIN_INTERVAL_S` → daily call and token budgets, kept in Redis and reset at midnight IST (in-memory fallback if Redis is down).
+   - Provider calls time out after `LLM_TIMEOUT_S` and are retried once. Whenever a guardrail blocks, the timeout hits, the provider errors, or the output fails schema validation, the caller's deterministic fallback runs and the result is marked `used_fallback=true` with `fallback_reason` one of `disabled | budget | rate | timeout | error`.
+   - LLM calls are event-driven only: agents call the LLM on meaningful events (booking request, incident, unusual surge), never on every tick.
+   - `GET /v1/agents/llm/budget` reports `calls_today`, `tokens_today`, `limits`, `enabled`, `cache_hits`.
+8. **Default Demo City**:
    - **Bengaluru, India**
    - Configurable via `CITY_CENTER_LAT` (default: `12.9716`) and `CITY_CENTER_LNG` (default: `77.5946`).
 
