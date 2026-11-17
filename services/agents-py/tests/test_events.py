@@ -133,7 +133,7 @@ async def test_recent_reads_database_rows():
     assert out[0]["input_summary"] == "s" and out[0]["kind"] == "match"
     assert out[0]["ts"] == "2026-11-17T10:00:00Z" and out[0]["id"] == 2
     assert out[1]["decision"] == "bare string"
-    assert out[2]["decision"] == '{"x": 1}'
+    assert out[2]["decision"] == "match" and out[2]["reasoning"] == '{"x": 1}'
     fetch = [a for k, s, a in pool.log if "FROM agent_events" in s][0]
     assert fetch == ("dispatch_broker", 3)
 
@@ -179,3 +179,27 @@ def test_agent_id_normalisation():
     assert ev.agent_id("Legal & Jurisdiction") == "legal_jurisdiction"
     assert ev.agent_id("dispatch_broker") == "dispatch_broker"
     assert ev.agent_id("Ops Supervisor") == "ops_supervisor"
+
+
+def _struct_row(event_type, decision, ride_id="r-9"):
+    return {"id": 1, "agent": "dispatch_broker", "event_type": event_type, "ride_id": ride_id,
+            "input": "{}", "decision": json.dumps(decision), "confidence": 0.55, "fallback_used": False,
+            "latency_ms": 0.1, "created_at": TS}
+
+
+def test_dispatch_go_structured_rows_are_summarised():
+    match = ev._from_row(_struct_row("match", {
+        "driver_id": "d_196", "matched_tier": "sedan", "requested_tier": "mini", "upgraded": True,
+        "rings_searched": 14, "search_radius_km": 4.87, "candidates_considered": 5,
+        "score": {"eta_seconds": 417.2, "distance_km": 2.086, "total": 0.554}, "alternatives": []}))
+    assert match["decision"] == "matched ride r-9 to d_196 (sedan), pickup ETA 7.0 min, upgraded from mini"
+    assert match["reasoning"] == "Best of 5 candidates within 14 H3 rings (~4.9 km): 2.09 km away, score 0.55."
+    assert match["metadata"]["driver_id"] == "d_196"
+
+    no_match = ev._from_row(_struct_row("no_match", {
+        "rings_searched": 1, "search_radius_km": 5.0, "candidates_found": 0, "requested_tier": "suv"}))
+    assert no_match["decision"] == "no driver available for ride r-9 (suv); request left open"
+    assert no_match["reasoning"] == "Searched 1 H3 ring (~5.0 km); 0 candidates found."
+
+    other = ev._from_row(_struct_row("scenario", {"name": "rush_hour"}, ride_id=None))
+    assert other["decision"] == "scenario" and other["reasoning"] == '{"name": "rush_hour"}'

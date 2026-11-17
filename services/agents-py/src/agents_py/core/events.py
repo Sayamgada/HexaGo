@@ -230,6 +230,32 @@ def _public(e: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in e.items() if not k.startswith("_")}
 
 
+def _rings(n: Any) -> str:
+    return f"{n} H3 ring" + ("" if n == 1 else "s")
+
+
+def _describe_structured(event_type: str, ride_id: str, d: Dict[str, Any]) -> tuple:
+    """One-line text for dispatch-go's structured match / no_match rows (as its stream shows them)."""
+    try:
+        if event_type == "match" and "driver_id" in d:
+            sc = d.get("score") or {}
+            decision = (f"matched ride {ride_id} to {d['driver_id']} ({d.get('matched_tier', '?')}), "
+                        f"pickup ETA {float(sc.get('eta_seconds', 0)) / 60:.1f} min")
+            if d.get("upgraded"):
+                decision += f", upgraded from {d.get('requested_tier', '?')}"
+            reasoning = (f"Best of {d.get('candidates_considered', 0)} candidates within "
+                         f"{_rings(d.get('rings_searched', 0))} (~{float(d.get('search_radius_km', 0)):.1f} km): "
+                         f"{float(sc.get('distance_km', 0)):.2f} km away, score {float(sc.get('total', 0)):.2f}.")
+            return decision, reasoning
+        if event_type == "no_match":
+            return (f"no driver available for ride {ride_id} ({d.get('requested_tier', '?')}); request left open",
+                    f"Searched {_rings(d.get('rings_searched', 0))} "
+                    f"(~{float(d.get('search_radius_km', 0)):.1f} km); {d.get('candidates_found', 0)} candidates found.")
+    except (TypeError, ValueError):
+        pass
+    return event_type or "decision", json.dumps(d)[:300]
+
+
 def _from_row(r: Any) -> Dict[str, Any]:
     dec = _loads(r["decision"])
     inp = _loads(r["input"])
@@ -237,8 +263,11 @@ def _from_row(r: Any) -> Dict[str, Any]:
         decision, reasoning = str(dec.get("decision") or ""), str(dec.get("reasoning") or "")
         fallback_reason = dec.get("fallback_reason")
         metadata = dec.get("metadata") or {}
+    elif isinstance(dec, dict):
+        decision, reasoning = _describe_structured(r["event_type"] or "", r["ride_id"] or "", dec)
+        fallback_reason, metadata = None, dec
     else:
-        decision = dec if isinstance(dec, str) else json.dumps(dec)
+        decision = str(dec)
         reasoning, fallback_reason, metadata = "", None, {}
     payload = ops_payload(
         r["agent"], decision, reasoning, r["confidence"] or 0, r["latency_ms"] or 0, r["fallback_used"],
