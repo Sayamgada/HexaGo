@@ -212,7 +212,14 @@ def main() -> int:
           f"now {sim.get('current_demand_per_min')}/min (tod {sim.get('time_of_day_factor')}), router {sim.get('router')}")
     if args.warmup:
         print(f"warming up {args.warmup:.0f}s ...", flush=True)
-        time.sleep(args.warmup)
+        # Stay subscribed while waiting: Render's free plan spins an idle
+        # service down after 15 minutes, which restarts the simulator.
+        left = args.warmup
+        while left > 0:
+            chunk = min(left, 300.0)
+            asyncio.run(observe(gw, chunk))
+            http("GET", gw + "/healthz")
+            left -= chunk
 
     # 2. Steady state.
     print(f"observing /v1/stream for {args.window:.0f}s ...", flush=True)
@@ -240,10 +247,17 @@ def main() -> int:
     if not args.no_scenario:
         before = get_json(gw + "/v1/metrics/dispatch")
         rate_before = get_json(gw + "/v1/sim/config").get("current_demand_per_min")
-        status, body = http("POST", gw + "/v1/sim/scenario/rush_hour")
+        # Subscribe first: the scenario's burst is dispatched inside the POST.
+        async def trigger_and_watch() -> tuple[Window, int, bytes]:
+            watch = asyncio.create_task(observe(gw, 22))
+            await asyncio.sleep(2)
+            st, b = await asyncio.to_thread(http, "POST", gw + "/v1/sim/scenario/rush_hour")
+            w2, _ = await watch
+            return w2, st, b
+
+        rw, status, body = asyncio.run(trigger_and_watch())
         view = json.loads(body) if body else {}
         print(f"rush_hour -> HTTP {status}: {view.get('detail')}", flush=True)
-        rw, _ = asyncio.run(observe(gw, 20))
         after = get_json(gw + "/v1/metrics/dispatch")
         rate_after = get_json(gw + "/v1/sim/config").get("current_demand_per_min")
         report["rush_hour"] = {
@@ -254,15 +268,18 @@ def main() -> int:
             "open_before": before["open_requests"], "open_after_20s": after["open_requests"],
             "dispatch_events_20s": rw.events_by_agent.get("dispatch_broker", 0),
             "new_requests_20s": rw.new_requests, "first_try_rate_20s": rw.first_try_rate,
+            "matches_20s": after["matches_total"] - before["matches_total"],
         }
         r = report["rush_hour"]
         print(f"rush_hour after 20 s: demand {rate_before} -> {rate_after}/min; busy {pct(r['busy_before'])} -> "
               f"{pct(r['busy_after_20s'])}; idle {r['idle_before']} -> {r['idle_after_20s']}; open "
-              f"{r['open_before']} -> {r['open_after_20s']}; {r['new_requests_20s']} requests in 20 s")
+              f"{r['open_before']} -> {r['open_after_20s']}; {r['new_requests_20s']} requests, "
+              f"{r['matches_20s']} matches in 20 s")
         checks.append(Check("rush_hour accepted", status == 200, f"HTTP {status}"))
         checks.append(Check("rush_hour visible within 20 s",
                             rw.new_requests >= 20 and busy_share(after) > busy_share(before),
-                            f"{rw.new_requests} requests, busy {pct(busy_share(before))} -> {pct(busy_share(after))}"))
+                            f"{rw.new_requests} requests, {r['matches_20s']} matches, "
+                            f"busy {pct(busy_share(before))} -> {pct(busy_share(after))}"))
 
     report["checks"] = [asdict(c) for c in checks]
     print("\nchecks:")
