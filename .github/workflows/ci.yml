@@ -186,7 +186,7 @@ jobs:
         run: python tools/autocoding_stats.py --coverage-json coverage-summary.json
       - name: Commit stats [skip ci]
         run: |
-          if git diff --quiet -- docs/AUTOCODING_STATS.md; then
+          if [ -z "$(git status --porcelain -- docs/AUTOCODING_STATS.md)" ]; then
             echo "Stats unchanged."; exit 0
           fi
           git config user.name "github-actions[bot]"
