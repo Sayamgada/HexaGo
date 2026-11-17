@@ -1,0 +1,29 @@
+# Core packages held to the coverage gate (tools/coverage_gate.py).
+#
+# Only the packages listed here are gated. To gate a new package (ledger,
+# safety, pricing, ...), add its directory below. A listed Python package
+# that does not exist yet is reported as "pending" instead of failing, so it
+# can be added here before its code lands.
+
+threshold: 96.0
+
+go:
+  # Go coverprofile written by:
+  #   go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
+  # -coverpkg counts statements exercised from any package's tests.
+  profile: services/dispatch-go/coverage.out
+  module: github.com/hexago/hexago/services/dispatch-go
+  packages:
+    - internal/geo
+    - internal/fleet
+    - internal/matching
+    # - internal/ledger
+    # - internal/safety
+    # - internal/pricing
+
+python:
+  # Cobertura XML written by: pytest --cov=src --cov-report=xml:coverage.xml
+  report: services/agents-py/coverage.xml
+  root: services/agents-py
+  packages:
+    - src/agents_py/core
