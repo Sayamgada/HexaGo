@@ -1,6 +1,8 @@
 // Package matching implements the Dispatch Broker's deterministic scorer: it
-// finds candidate drivers by expanding H3 k-rings around the pickup and ranks
-// them by ETA, momentum, rating, idle time and (for AVs) battery sufficiency.
+// finds candidate drivers by expanding H3 k-rings around the pickup ring by
+// ring (out to MaxPickupKm), offers a free tier upgrade when the requested
+// tier has nobody nearby, and ranks drivers by ETA, momentum, rating, idle
+// time and (for AVs) battery sufficiency.
 package matching
 
 import (
@@ -31,8 +33,10 @@ type Weights struct {
 
 // Config tunes the matcher. The zero value is replaced by DefaultConfig.
 type Config struct {
-	MaxRings        int           // k-ring expansion limit
-	MinCandidates   int           // stop expanding once this many eligible drivers are found
+	MaxPickupKm     float64       // straight-line pickup radius; the k-ring limit is derived from it
+	MaxRings        int           // optional hard cap on k-ring expansion (0 = derived from MaxPickupKm)
+	MinCandidates   int           // stop expanding once this many eligible drivers of the requested tier are found
+	AllowUpgrade    bool          // offer the next tier up (mini -> sedan -> premium) when the requested tier has no one
 	MaxRanked       int           // ranked list length kept for claim retries
 	CitySpeedFactor float64       // congestion multiplier on driving speed (0..1]
 	BaseSpeedKmh    float64       // assumed speed for slow/stationary drivers
@@ -49,8 +53,9 @@ type Config struct {
 // DefaultConfig returns tuning suitable for a dense Indian metro.
 func DefaultConfig() Config {
 	return Config{
-		MaxRings:        3,
-		MinCandidates:   4, // best + 3 alternatives
+		MaxPickupKm:     5,
+		MinCandidates:   5, // best + alternatives
+		AllowUpgrade:    true,
 		MaxRanked:       10,
 		CitySpeedFactor: 0.6,
 		BaseSpeedKmh:    30,
@@ -106,12 +111,17 @@ type Candidate struct {
 
 // Result is the outcome of a match.
 type Result struct {
-	Best          Candidate
-	Alternatives  []Candidate   // up to 3, best first
-	Ranked        []Candidate   // all kept candidates, best first (for claim retries)
-	Considered    int           // eligible drivers scored
-	RingsSearched int           // rings expanded (1 = pickup cell only)
-	Latency       time.Duration // time spent in Match
+	Best           Candidate
+	Alternatives   []Candidate   // up to 3, best first
+	Ranked         []Candidate   // all kept candidates, best first (for claim retries)
+	Considered     int           // eligible drivers scored in the chosen tier
+	RingsSearched  int           // rings expanded (1 = pickup cell only)
+	SearchRadiusKm float64       // approximate radius covered (MaxPickupKm when the search was exhausted)
+	RequestedTier  fleet.Tier    // tier the rider asked for
+	Tier           fleet.Tier    // tier of the chosen driver (empty when unmatched)
+	Upgraded       bool          // Tier is a free upgrade over RequestedTier
+	TiersTried     []fleet.Tier  // requested tier first, then the upgrade chain
+	Latency        time.Duration // time spent in Match
 }
 
 const maxAlternatives = 3
@@ -169,6 +179,12 @@ func New(f *fleet.Index, g geo.Indexer, cfg Config, opts ...Option) *Matcher {
 	if cfg == (Config{}) {
 		cfg = DefaultConfig()
 	}
+	if cfg.MaxPickupKm <= 0 {
+		cfg.MaxPickupKm = DefaultConfig().MaxPickupKm
+	}
+	if cfg.MinCandidates <= 0 {
+		cfg.MinCandidates = 1
+	}
 	m := &Matcher{fleet: f, geo: g, cfg: cfg, now: time.Now}
 	for _, o := range opts {
 		o(m)
@@ -194,32 +210,106 @@ func (m *Matcher) Match(req Request) (Result, error) {
 	return res, err
 }
 
+// fineRings are fetched first: most requests in a dense city stop here, so the
+// large disk (up to MaxPickupKm) is only enumerated for sparse areas.
+const fineRings = 3
+
+// MaxRingsFor returns the k-ring distance whose disk fully covers
+// cfg.MaxPickupKm at resolution res. The innermost point of ring k is about
+// 1.5·edge·k − edge from the origin centre, so k = ⌈(R + edge) / (1.5·edge)⌉.
+func MaxRingsFor(cfg Config, res int) int {
+	edge := geo.AvgEdgeKm(res)
+	if edge <= 0 {
+		return fineRings
+	}
+	k := int(math.Ceil((cfg.MaxPickupKm + edge) / (1.5 * edge)))
+	if cfg.MaxRings > 0 && k > cfg.MaxRings {
+		k = cfg.MaxRings
+	}
+	return max(k, 0)
+}
+
+// searchRadiusKm approximates the radius covered after `searched` rings.
+func searchRadiusKm(cfg Config, res, searched, maxK int) float64 {
+	if searched > maxK {
+		return cfg.MaxPickupKm
+	}
+	r := float64(searched) * math.Sqrt(3) * geo.AvgEdgeKm(res)
+	return math.Min(cfg.MaxPickupKm, math.Round(r*100)/100)
+}
+
 func (m *Matcher) match(req Request) (Result, error) {
 	origin, err := m.geo.CellOf(req.Pickup)
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
-	rings, err := m.geo.Rings(origin, m.cfg.MaxRings)
-	if err != nil {
-		return Result{}, err
+	tiers := []fleet.Tier{req.Tier}
+	if m.cfg.AllowUpgrade {
+		tiers = append(tiers, fleet.UpgradeChain(req.Tier)...)
 	}
+	out := Result{RequestedTier: req.Tier, TiersTried: tiers}
+	res := m.geo.Resolution()
+	maxK := MaxRingsFor(m.cfg, res)
+	first := min(fineRings, maxK)
+	rings, err := m.geo.Rings(origin, first)
+	if err != nil {
+		return out, err
+	}
+
+	// One sweep collects the requested tier and every upgrade tier; the
+	// requested tier alone decides when to stop expanding.
 	now := m.now()
-	var cands []Candidate
-	searched := 0
-	for k, ring := range rings {
-		searched = k + 1
+	buckets := make([][]Candidate, len(tiers))
+	radius := m.cfg.MaxPickupKm
+	k := 0
+	visit := func(ring []geo.Cell) {
 		m.fleet.VisitCells(ring, func(d fleet.Driver) {
-			if b, ok := Score(m.cfg, d, req, now); ok {
-				cands = append(cands, Candidate{Driver: d, Ring: k, Score: b})
+			if d.Status != fleet.StatusIdle {
+				return
+			}
+			ti := -1
+			for i, t := range tiers {
+				if d.Tier == t {
+					ti = i
+					break
+				}
+			}
+			if ti < 0 || geo.HaversineKm(d.Point(), req.Pickup) > radius {
+				return
+			}
+			r := req
+			r.Tier = d.Tier
+			if b, ok := Score(m.cfg, d, r, now); ok {
+				buckets[ti] = append(buckets[ti], Candidate{Driver: d, Ring: k, Score: b})
 			}
 		})
-		if len(cands) >= m.cfg.MinCandidates {
+	}
+	enough := func() bool { return len(buckets[0]) >= m.cfg.MinCandidates }
+	for ; k <= first && !enough(); k++ {
+		visit(rings[k])
+	}
+	if !enough() && maxK > first {
+		if rings, err = m.geo.Rings(origin, maxK); err != nil {
+			return out, err
+		}
+		for ; k <= maxK && !enough(); k++ {
+			visit(rings[k])
+		}
+	}
+	out.RingsSearched = k
+	out.SearchRadiusKm = searchRadiusKm(m.cfg, res, k, maxK)
+
+	var cands []Candidate
+	for i, b := range buckets {
+		if len(b) > 0 {
+			cands, out.Tier = b, tiers[i]
 			break
 		}
 	}
 	if len(cands) == 0 {
-		return Result{RingsSearched: searched}, ErrNoCandidates
+		return out, ErrNoCandidates
 	}
+	out.Upgraded = out.Tier != req.Tier
 	sort.Slice(cands, func(i, j int) bool {
 		if cands[i].Score.Total != cands[j].Score.Total {
 			return cands[i].Score.Total > cands[j].Score.Total
@@ -230,10 +320,11 @@ func (m *Matcher) match(req Request) (Result, error) {
 	if len(cands) > m.cfg.MaxRanked {
 		cands = cands[:m.cfg.MaxRanked]
 	}
-	res := newResult(cands)
-	res.Considered = considered
-	res.RingsSearched = searched
-	return res, nil
+	ranked := newResult(cands)
+	ranked.Considered = considered
+	ranked.RingsSearched, ranked.SearchRadiusKm = out.RingsSearched, out.SearchRadiusKm
+	ranked.RequestedTier, ranked.Tier, ranked.Upgraded, ranked.TiersTried = out.RequestedTier, out.Tier, out.Upgraded, out.TiersTried
+	return ranked, nil
 }
 
 // Score rates driver d for req at time now. It returns ok=false if the driver

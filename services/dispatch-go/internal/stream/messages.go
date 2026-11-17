@@ -85,14 +85,23 @@ type AgentEvent struct {
 	LatencyMs    float64 `json:"latency_ms"`
 	UsedFallback bool    `json:"used_fallback"`
 	TS           string  `json:"ts"` // RFC 3339, UTC
+
+	// Optional structured context so clients can filter and tag events.
+	Kind          string `json:"kind,omitempty"`    // match | no_match | incident | scenario
+	RideID        string `json:"ride_id,omitempty"` // full ride UUID
+	DriverID      string `json:"driver_id,omitempty"`
+	Tier          string `json:"tier,omitempty"`           // tier that serves the ride
+	RequestedTier string `json:"requested_tier,omitempty"` // tier the rider asked for
+	Upgraded      bool   `json:"upgraded,omitempty"`       // free tier upgrade applied
 }
 
 // NewAgentEvent builds an ops agent_event payload.
 func NewAgentEvent(agent, decision, reasoning string, confidence, latencyMs float64, usedFallback bool, ts time.Time) AgentEvent {
 	r3 := func(v float64) float64 { return math.Round(v*1000) / 1000 }
+	r4 := func(v float64) float64 { return math.Round(v*10000) / 10000 } // 0.1 µs
 	return AgentEvent{
 		Type: "agent_event", Agent: agent, Decision: decision, Reasoning: reasoning,
-		Confidence: r3(confidence), LatencyMs: r3(latencyMs), UsedFallback: usedFallback,
+		Confidence: r3(confidence), LatencyMs: r4(latencyMs), UsedFallback: usedFallback,
 		TS: ts.UTC().Format(time.RFC3339),
 	}
 }

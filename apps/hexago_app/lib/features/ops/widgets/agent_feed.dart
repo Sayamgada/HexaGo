@@ -47,14 +47,39 @@ String displayAgentName(String agent) {
   return agent.split('_').where((p) => p.isNotEmpty).map((p) => p[0].toUpperCase() + p.substring(1)).join(' ');
 }
 
-class AgentFeed extends StatelessWidget {
+/// Feed filter chips.
+enum FeedFilter {
+  all('All', null, 'No agent decisions yet'),
+  matches('Matches', FeedCategory.match, 'No matches yet'),
+  unmatched('Unmatched', FeedCategory.unmatched, 'No unmatched requests'),
+  incidents('Incidents', FeedCategory.incident, 'No incidents yet');
+
+  const FeedFilter(this.label, this.category, this.emptyText);
+  final String label;
+  final FeedCategory? category;
+  final String emptyText;
+
+  bool accepts(AgentEvent e) => category == null || e.category == category;
+}
+
+class AgentFeed extends StatefulWidget {
   const AgentFeed({super.key, required this.events, this.totalSeen});
 
   final List<AgentEvent> events;
   final int? totalSeen;
 
   @override
+  State<AgentFeed> createState() => _AgentFeedState();
+}
+
+class _AgentFeedState extends State<AgentFeed> {
+  FeedFilter _filter = FeedFilter.all;
+
+  @override
   Widget build(BuildContext context) {
+    final events = widget.events;
+    final totalSeen = widget.totalSeen;
+    final shown = _filter == FeedFilter.all ? events : events.where(_filter.accepts).toList();
     return Container(
       decoration: BoxDecoration(
         color: HexaColors.surface,
@@ -77,18 +102,35 @@ class AgentFeed extends StatelessWidget {
               ),
             ]),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final f in FeedFilter.values)
+                ChoiceChip(
+                  key: ValueKey('feed-filter-${f.label}'),
+                  label: Text(f.label, style: const TextStyle(fontSize: 11)),
+                  selected: _filter == f,
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onSelected: (_) => setState(() => _filter = f),
+                ),
+            ]),
+          ),
           const Divider(height: 1),
           Expanded(
             child: events.isEmpty
                 ? const Center(
                     child: Text('Waiting for agent decisions…', style: TextStyle(color: HexaColors.textMuted)),
                   )
-                : ListView.builder(
-                    key: const ValueKey('agent-feed-list'),
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: events.length,
-                    itemBuilder: (context, i) => AgentEventTile(key: ValueKey(events[i].id), event: events[i]),
-                  ),
+                : shown.isEmpty
+                    ? Center(child: Text(_filter.emptyText, style: const TextStyle(color: HexaColors.textMuted)))
+                    : ListView.builder(
+                        key: const ValueKey('agent-feed-list'),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: shown.length,
+                        itemBuilder: (context, i) => AgentEventTile(key: ValueKey(shown[i].id), event: shown[i]),
+                      ),
           ),
         ],
       ),
@@ -147,11 +189,22 @@ class _AgentEventTileState extends State<AgentEventTile> {
                   ]),
                   const SizedBox(height: 3),
                   Text(
-                    e.decision,
+                    shortenIds(e.decision),
                     maxLines: _expanded ? null : 2,
                     overflow: _expanded ? null : TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 13, height: 1.25),
                   ),
+                  if (e.rideId.isNotEmpty || e.driverId.isNotEmpty || e.tier.isNotEmpty || e.upgraded) ...[
+                    const SizedBox(height: 4),
+                    Wrap(spacing: 4, runSpacing: 4, children: [
+                      if (e.rideId.isNotEmpty)
+                        _Tag(shortId(e.rideId), HexaColors.textMuted, key: const ValueKey('ride-tag'), mono: true),
+                      if (e.driverId.isNotEmpty)
+                        _Tag(e.driverId, HexaColors.textMuted, key: const ValueKey('driver-tag'), mono: true),
+                      if (e.tier.isNotEmpty) _Tag(e.tier.toUpperCase(), style.color, key: const ValueKey('tier-tag')),
+                      if (e.upgraded) const _Tag('UPGRADED', HexaColors.good, key: ValueKey('upgraded-tag')),
+                    ]),
+                  ],
                   const SizedBox(height: 5),
                   Row(children: [
                     Text(
@@ -176,7 +229,7 @@ class _AgentEventTileState extends State<AgentEventTile> {
                     const Icon(Icons.timer_outlined, size: 11, color: HexaColors.textMuted),
                     const SizedBox(width: 2),
                     Text(
-                      formatMs(e.latencyMs),
+                      formatLatency(e.latencyMs),
                       key: const ValueKey('event-latency'),
                       style: const TextStyle(fontSize: 11, color: HexaColors.textMuted),
                     ),
@@ -186,7 +239,7 @@ class _AgentEventTileState extends State<AgentEventTile> {
                   AnimatedSize(
                     duration: const Duration(milliseconds: 150),
                     alignment: Alignment.topCenter,
-                    child: _expanded && e.reasoning.isNotEmpty
+                    child: _expanded && (e.reasoning.isNotEmpty || e.rideId.isNotEmpty || e.driverId.isNotEmpty)
                         ? Container(
                             key: const ValueKey('event-reasoning'),
                             width: double.infinity,
@@ -197,10 +250,28 @@ class _AgentEventTileState extends State<AgentEventTile> {
                               borderRadius: BorderRadius.circular(6),
                               border: Border(left: BorderSide(color: style.color, width: 2)),
                             ),
-                            child: Text(
-                              e.reasoning,
-                              style: const TextStyle(fontSize: 12, color: Color(0xFFCBD5E1), height: 1.35),
-                            ),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              if (e.reasoning.isNotEmpty)
+                                Text(
+                                  e.reasoning,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFFCBD5E1), height: 1.35),
+                                ),
+                              if (e.rideId.isNotEmpty || e.driverId.isNotEmpty)
+                                Padding(
+                                  key: const ValueKey('event-ids'),
+                                  padding: EdgeInsets.only(top: e.reasoning.isNotEmpty ? 6 : 0),
+                                  child: SelectableText(
+                                    [
+                                      if (e.rideId.isNotEmpty) 'Ride ${e.rideId}',
+                                      if (e.driverId.isNotEmpty) 'Driver ${e.driverId}',
+                                      if (e.upgraded && e.requestedTier.isNotEmpty)
+                                        'Requested ${e.requestedTier}, served by ${e.tier}',
+                                    ].join('\n'),
+                                    style: const TextStyle(
+                                        fontSize: 11, color: HexaColors.textMuted, fontFamily: 'monospace', height: 1.4),
+                                  ),
+                                ),
+                            ]),
                           )
                         : const SizedBox(width: double.infinity),
                   ),
@@ -208,6 +279,37 @@ class _AgentEventTileState extends State<AgentEventTile> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small outlined label (ride id, driver id, tier, UPGRADED).
+class _Tag extends StatelessWidget {
+  const _Tag(this.text, this.color, {super.key, this.mono = false});
+
+  final String text;
+  final Color color;
+  final bool mono;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: mono ? 0 : 0.5,
+          fontFamily: mono ? 'monospace' : null,
         ),
       ),
     );

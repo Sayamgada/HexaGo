@@ -24,7 +24,7 @@ void main() {
     expect(find.text('Dispatch Broker'), findsOneWidget);
     expect(find.text('Matched rider in Koramangala to drv_042 (ETA 3 min)'), findsOneWidget);
     expect(find.text('91% conf'), findsOneWidget);
-    expect(find.text('142 ms'), findsOneWidget);
+    expect(find.text('142.00 ms'), findsOneWidget);
     expect(find.text('1,234 events'), findsOneWidget);
     expect(find.byKey(const ValueKey('fallback-tag')), findsNothing);
   });

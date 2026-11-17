@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/app_config.dart';
+import '../data/basemap.dart';
 import '../data/live_ops_source.dart';
 import '../data/mock_ops_source.dart';
 import '../data/ops_source.dart';
@@ -20,8 +23,23 @@ final opsSourceProvider = Provider.autoDispose<OpsSource>((ref) {
   return source;
 });
 
-/// Whether to load CARTO tiles (disabled in widget tests).
+/// Whether to load basemap tiles (disabled in widget tests).
 final showMapTilesProvider = Provider<bool>((ref) => true);
+
+/// The basemap for this session: keyless CARTO dark tiles if they serve real
+/// imagery, otherwise OSM (see [probeBasemap]). Probed once.
+final basemapProvider = FutureProvider<Basemap>((ref) {
+  final dio = Dio(BaseOptions(
+    responseType: ResponseType.bytes,
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: const Duration(seconds: 5),
+  ));
+  ref.onDispose(dio.close);
+  return probeBasemap((url) async {
+    final r = await dio.get<List<int>>(url);
+    return Uint8List.fromList(r.data ?? const []);
+  });
+});
 
 final fleetTrackerProvider = Provider.autoDispose<FleetTracker>((ref) {
   final source = ref.watch(opsSourceProvider);

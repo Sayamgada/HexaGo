@@ -29,6 +29,7 @@ const (
 	MaxDrivers       = 2000
 	MaxDemandPerMin  = 600.0
 	UnmatchedTimeout = 90 * time.Second // open sim requests are cancelled after this
+	retryEvery       = 5 * time.Second  // open sim requests are re-dispatched this often
 	wanderWait       = 30 * time.Second // idle drivers wait this long for a road route
 	mirrorEvery      = 5 * time.Second
 	logEvery         = time.Minute
@@ -106,6 +107,9 @@ type simDriver struct {
 
 	ride     *simRide
 	incident *incident
+
+	offlineUntil time.Time // logged off (rain storm) until then
+	offline      bool      // currently offline; refreshed every Step
 }
 
 func (d *simDriver) busy() bool { return d.ride != nil }
@@ -116,6 +120,8 @@ func (d *simDriver) wireStatus() string {
 		return "incident"
 	case d.ride != nil:
 		return string(d.ride.status.DriverStatus())
+	case d.offline:
+		return string(fleet.StatusOffline)
 	}
 	return string(fleet.StatusIdle)
 }
@@ -130,6 +136,7 @@ type scenarioState struct {
 type openRequest struct {
 	id      string
 	created time.Time
+	tried   time.Time // last dispatch attempt
 }
 
 // Sim is the fleet simulator.
@@ -436,15 +443,30 @@ func (s *Sim) Step(ctx context.Context) {
 
 	drivers := make([]stream.Driver, 0, len(s.order))
 	for _, d := range s.order {
-		if d.ride != nil && d.ride.fresh {
+		wantOffline := d.ride == nil && now.Before(d.offlineUntil)
+		switch {
+		case d.ride != nil && d.ride.fresh:
 			d.ride.fresh = false
-		} else {
+		case wantOffline:
+			s.clearRoute(d)
+			d.speed = 0
+		default:
 			effects = append(effects, s.advance(d, now, dt, speedFactor)...)
 		}
+		d.offline = false
 		fd, err := s.svc.Fleet().ApplyLocal(d.id, func(fd *fleet.Driver, exists bool) error {
 			if !exists {
 				*fd = fleet.Driver{ID: d.id, Status: fleet.StatusIdle, Tier: d.tier, Rating: d.rating}
 			}
+			// Only an idle driver logs off; one the dispatcher just claimed
+			// keeps its ride and goes offline after it (if the storm lasts).
+			switch {
+			case wantOffline && fd.Status == fleet.StatusIdle:
+				fd.Status = fleet.StatusOffline
+			case !wantOffline && fd.Status == fleet.StatusOffline:
+				fd.Status = fleet.StatusIdle
+			}
+			d.offline = fd.Status == fleet.StatusOffline
 			fd.Lat, fd.Lng, fd.Heading, fd.SpeedKmh = d.pos.Lat, d.pos.Lng, d.heading, d.speed
 			if d.tier == fleet.TierAV {
 				fd.BatteryPct = d.battery
@@ -678,7 +700,7 @@ func (s *Sim) maybeWander(d *simDriver, now time.Time) {
 	if len(s.spikes) > 0 && s.rng.Float64() < 0.5 {
 		target = s.jitter(s.spikes[s.rng.IntN(len(s.spikes))].at, 0.5)
 	} else {
-		target = s.jitter(s.pickHotspot().at, 0.8)
+		target = s.jitter(s.pickHotspotNear(d.pos).at, 0.8)
 	}
 	if km := geo.HaversineKm(d.pos, target); km > 4 {
 		f := 4 / km
@@ -730,7 +752,7 @@ func (s *Sim) demandRateLocked(now time.Time) float64 {
 			mult *= x.demandMult
 		}
 	}
-	r := s.base * TimeOfDayFactor(now) * mult
+	r := s.base * s.curve(now) * mult
 	for _, sp := range s.spikes {
 		if now.Before(sp.until) {
 			r += sp.perMin
@@ -795,19 +817,24 @@ func (s *Sim) DemandTick(ctx context.Context) {
 			rider: fmt.Sprintf("r_sim_%04d", s.rng.IntN(5000)), pickup: p, dropoff: s.randomDropoff(p), tier: s.pickTier(),
 		})
 	}
-	var expired []string
+	var expired, retry []string
 	kept := s.open[:0]
 	for _, o := range s.open {
-		if now.Sub(o.created) >= UnmatchedTimeout {
+		switch {
+		case now.Sub(o.created) >= UnmatchedTimeout:
 			expired = append(expired, o.id)
-		} else {
-			kept = append(kept, o)
+			continue
+		case now.Sub(o.tried) >= retryEvery:
+			retry = append(retry, o.id)
+			o.tried = now
 		}
+		kept = append(kept, o)
 	}
 	s.open = kept
 	s.stats.requests += n
 	s.mu.Unlock()
 
+	s.retryOpen(ctx, retry)
 	for _, id := range expired {
 		if _, err := s.svc.CancelRide(ctx, id, "no_driver_timeout"); err != nil && !errors.Is(err, dispatch.ErrConflict) {
 			s.log.Printf("WARN sim: expire request %s: %v", id, err)
@@ -826,7 +853,7 @@ func (s *Sim) createRides(ctx context.Context, reqs []rideRequest, now time.Time
 		}
 		if view.Match == nil {
 			s.mu.Lock()
-			s.open = append(s.open, openRequest{id: view.Ride.ID, created: now})
+			s.open = append(s.open, openRequest{id: view.Ride.ID, created: now, tried: now})
 			s.mu.Unlock()
 		}
 	}
@@ -835,7 +862,7 @@ func (s *Sim) createRides(ctx context.Context, reqs []rideRequest, now time.Time
 // announce streams a simulator notice on ops (and records it in agent_events).
 func (s *Sim) announce(ctx context.Context, decision, reasoning string) {
 	s.svc.RecordAgentEvent(ctx, dispatch.AgentEventInput{
-		Agent: "fleet_simulator", EventType: "scenario", Decision: decision, Reasoning: reasoning, Confidence: 1,
+		Agent: "fleet_simulator", EventType: "scenario", Kind: "scenario", Decision: decision, Reasoning: reasoning, Confidence: 1,
 	})
 }
 
@@ -888,7 +915,7 @@ func (s *Sim) Status() ConfigView {
 	s.expire(now)
 	v := ConfigView{
 		Running: s.running, Drivers: s.target, LiveDrivers: len(s.order), DemandPerMin: s.base,
-		CurrentPerMin: round(s.demandRateLocked(now), 2), TimeOfDay: round(TimeOfDayFactor(now), 3),
+		CurrentPerMin: round(s.demandRateLocked(now), 2), TimeOfDay: round(s.curve(now), 3),
 		SpeedFactor: s.speedFactorLocked(), Scenarios: []ScenarioInfo{}, Spikes: []SpikeInfo{}, Router: "straight_line",
 	}
 	for _, d := range s.order {
@@ -952,4 +979,31 @@ func (s *Sim) Configure(ctx context.Context, in ConfigInput) (ConfigView, error)
 			"Operator-requested demand spike via POST /v1/sim/config.")
 	}
 	return s.Status(), nil
+}
+
+// retryOpen re-dispatches open requests now that drivers may have freed up;
+// matched (or no longer open) requests leave the open list.
+func (s *Sim) retryOpen(ctx context.Context, ids []string) {
+	done := map[string]bool{}
+	for _, id := range ids {
+		view, err := s.svc.RetryRide(ctx, id)
+		switch {
+		case err == nil && view.Match != nil, errors.Is(err, dispatch.ErrConflict), errors.Is(err, dispatch.ErrNotFound):
+			done[id] = true
+		case err != nil:
+			s.log.Printf("WARN sim: retry request %s: %v", id, err)
+		}
+	}
+	if len(done) == 0 {
+		return
+	}
+	s.mu.Lock()
+	kept := s.open[:0]
+	for _, o := range s.open {
+		if !done[o.id] {
+			kept = append(kept, o)
+		}
+	}
+	s.open = kept
+	s.mu.Unlock()
 }

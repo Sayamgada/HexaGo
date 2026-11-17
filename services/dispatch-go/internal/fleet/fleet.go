@@ -58,6 +58,24 @@ var allTiers = []Tier{TierAuto, TierMini, TierSedan, TierPremium, TierXL, TierAV
 // Tiers returns every supported tier.
 func Tiers() []Tier { return append([]Tier(nil), allTiers...) }
 
+// upgradeLadder is the free-upgrade order: auto -> mini -> sedan -> premium.
+// XL (a size class) and AVs never upgrade.
+var upgradeLadder = []Tier{TierAuto, TierMini, TierSedan, TierPremium}
+
+// maxUpgradeSteps caps how far up the ladder a free upgrade may go.
+const maxUpgradeSteps = 2
+
+// UpgradeChain returns the tiers t may be upgraded to, nearest first.
+func UpgradeChain(t Tier) []Tier {
+	for i, x := range upgradeLadder {
+		if x == t {
+			end := min(i+1+maxUpgradeSteps, len(upgradeLadder))
+			return append([]Tier(nil), upgradeLadder[i+1:end]...)
+		}
+	}
+	return nil
+}
+
 // ParseTier parses a tier name case-insensitively.
 func ParseTier(s string) (Tier, error) {
 	t := Tier(strings.ToLower(strings.TrimSpace(s)))

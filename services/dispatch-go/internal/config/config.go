@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -23,10 +24,12 @@ type Config struct {
 	H3Resolution int
 	// CitySpeedFactor scales driving speed for congestion in ETAs (CITY_SPEED_FACTOR, (0,1], default 0.6).
 	CitySpeedFactor float64
+	// MaxPickupKm caps the dispatch search radius (MAX_PICKUP_KM, (0,50], default 5).
+	MaxPickupKm float64
 
 	// Fleet simulator (runs when DemoMode is on).
 	SimDrivers      int     // SIM_DRIVERS, 0..2000, default 300
-	SimDemandPerMin float64 // SIM_DEMAND_PER_MIN, mean ride requests per minute, default 6
+	SimDemandPerMin float64 // SIM_DEMAND_PER_MIN, mean ride requests per minute; 0 or "auto" (default) sizes it to the fleet
 	OSRMURL         string  // OSRM_URL, default public demo server; "off" = straight lines only
 	OSRMRPS         float64 // OSRM_RPS, request rate limit, default 1 (public server policy)
 
@@ -67,13 +70,18 @@ func Load() *Config {
 		speed = 0.6
 	}
 
+	pickup, err := strconv.ParseFloat(getEnv("MAX_PICKUP_KM", "5"), 64)
+	if err != nil || pickup <= 0 || pickup > 50 {
+		pickup = 5
+	}
+
 	simDrivers, err := strconv.Atoi(getEnv("SIM_DRIVERS", "300"))
 	if err != nil || simDrivers < 0 || simDrivers > 2000 {
 		simDrivers = 300
 	}
-	demand, err := strconv.ParseFloat(getEnv("SIM_DEMAND_PER_MIN", "6"), 64)
-	if err != nil || demand < 0 {
-		demand = 6
+	demand, err := strconv.ParseFloat(getEnv("SIM_DEMAND_PER_MIN", "auto"), 64)
+	if err != nil || demand < 0 || math.IsNaN(demand) {
+		demand = 0 // auto: main sizes demand to the fleet (sim.AutoDemandPerMin)
 	}
 	osrmURL := strings.TrimRight(getEnv("OSRM_URL", DefaultOSRMURL), "/")
 	if strings.EqualFold(osrmURL, "off") {
@@ -103,6 +111,7 @@ func Load() *Config {
 		CORSOrigins:     getEnv("CORS_ALLOWED_ORIGINS", cors.DefaultOrigins),
 		H3Resolution:    res,
 		CitySpeedFactor: speed,
+		MaxPickupKm:     pickup,
 	}
 }
 

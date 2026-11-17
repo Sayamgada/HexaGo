@@ -60,3 +60,12 @@ func TestLoadStorageURLsDefaultEmpty(t *testing.T) {
 		t.Errorf("unset storage URLs should stay empty (in-memory mode): %q %q", c.DatabaseURL, c.RedisURL)
 	}
 }
+
+func TestLoadMaxPickupKm(t *testing.T) {
+	for in, want := range map[string]float64{"": 5, "3.5": 3.5, "0": 5, "-2": 5, "abc": 5, "80": 5, "25": 25} {
+		t.Setenv("MAX_PICKUP_KM", in)
+		if got := Load().MaxPickupKm; got != want {
+			t.Errorf("MAX_PICKUP_KM=%q: got %v, want %v", in, got, want)
+		}
+	}
+}

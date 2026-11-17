@@ -16,10 +16,9 @@ Stack: Riverpod, go_router, dio, web_socket_channel, flutter_map.
 | `API_BASE_URL` | `http://localhost:8080` | dispatch-go REST base |
 | `WS_BASE_URL` | `ws://localhost:8080` | dispatch-go WebSocket base |
 | `USE_MOCK` | `true` in debug, `false` in release | `true` = `MockOpsSource` (300 simulated cars), `false` = `LiveOpsSource` |
-| `CARTO_API_KEY` | empty | CARTO now requires a key on every basemap tile (free tier: https://carto.com/basemaps/apikey). Without it the map draws a plain dark hex grid instead of tiles |
 
 ```powershell
-flutter run -d chrome --dart-define=USE_MOCK=true --dart-define=CARTO_API_KEY=<key>
+flutter run -d chrome --dart-define=USE_MOCK=true
 ```
 
 ### Live backend contract (`LiveOpsSource`)
@@ -43,3 +42,22 @@ batched every 250 ms so a burst of events causes one rebuild.
 - `lib/features/ops/data`: `OpsSource` interface, `MockOpsSource`, `LiveOpsSource`
 - `lib/features/ops/state`: Riverpod providers, `FleetTracker` (interpolation)
 - `lib/features/ops/widgets`: map, metrics strip, agent feed, banner, scenario bar
+
+### Basemap
+
+No key is needed. The map uses CARTO `dark_all` raster tiles
+(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`, subdomains a–d,
+"© OpenStreetMap contributors © CARTO"). Keyless CARTO requests can return HTTP 200
+with an identical "API KEY REQUIRED" image for every tile, so on start-up the app
+loads two different CARTO tiles: if either fails or both are byte-identical it uses
+standard OSM tiles (`tile.openstreetmap.org`, darkened with flutter_map's
+`darkModeTileBuilder`) instead. A per-tile `fallbackUrl` to OSM also covers tile
+errors. On the first fleet snapshot the camera fits every vehicle.
+
+### Ops feed
+
+Latencies under 1 ms show in microseconds (`42 µs`), otherwise with two decimals
+(`1.38 ms`). Ride IDs are shortened to `#714fcb` (the full ID and driver ID are in
+the expanded view); tier and `UPGRADED` tags come from the `kind`, `ride_id`,
+`driver_id`, `tier`, `requested_tier` and `upgraded` fields of `agent_event`. Filter
+chips: All / Matches / Unmatched / Incidents.

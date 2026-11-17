@@ -13,7 +13,7 @@ func TestLoadSimDefaults(t *testing.T) {
 	if c.SimDrivers != 300 {
 		t.Errorf("SimDrivers %d", c.SimDrivers)
 	}
-	if c.SimDemandPerMin != 6 {
+	if c.SimDemandPerMin != 0 { // 0 = auto (sized to the fleet)
 		t.Errorf("SimDemandPerMin %v", c.SimDemandPerMin)
 	}
 	if c.OSRMURL != "https://router.project-osrm.org" {
@@ -46,8 +46,15 @@ func TestLoadSimOverridesAndBadValues(t *testing.T) {
 	t.Setenv("TELEMETRY_FLUSH_INTERVAL", "soon")
 	t.Setenv("TELEMETRY_RETENTION", "-5m")
 	c = Load()
-	if c.SimDrivers != 300 || c.SimDemandPerMin != 6 || c.OSRMRPS != 1 ||
+	if c.SimDrivers != 300 || c.SimDemandPerMin != 0 || c.OSRMRPS != 1 ||
 		c.TelemetryFlush != 5*time.Second || c.TelemetryRetention != 2*time.Hour {
 		t.Fatalf("bad values not defaulted: %+v", c)
+	}
+}
+
+func TestLoadSimDemandAuto(t *testing.T) {
+	t.Setenv("SIM_DEMAND_PER_MIN", "auto")
+	if c := Load(); c.SimDemandPerMin != 0 {
+		t.Fatalf("auto -> %v, want 0", c.SimDemandPerMin)
 	}
 }

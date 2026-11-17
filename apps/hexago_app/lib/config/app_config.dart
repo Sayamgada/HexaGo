@@ -20,10 +20,6 @@ class AppConfig {
       ? bool.fromEnvironment('USE_MOCK')
       : !kReleaseMode;
 
-  /// CARTO basemaps require a key on every tile request (free tier:
-  /// https://carto.com/basemaps/apikey). Without it the map draws no tiles.
-  static const String cartoApiKey = String.fromEnvironment('CARTO_API_KEY');
-
   static const String appName = 'HexaGo';
   static const String defaultCity = 'Bengaluru';
   static const double cityLat = 12.9716;

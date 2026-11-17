@@ -114,12 +114,13 @@ func rank(sorted []float64, q float64) float64 {
 }
 
 // Millis is a millisecond value that always marshals as a JSON float with at
-// least one decimal place (0.0, 1.5, 2.375), rounded to microseconds.
+// least one decimal place (0.0, 1.5, 0.0423), rounded to 0.1 µs so
+// sub-millisecond match latencies never collapse to zero.
 type Millis float64
 
 // MarshalJSON implements json.Marshaler.
 func (m Millis) MarshalJSON() ([]byte, error) {
-	v := math.Round(float64(m)*1000) / 1000
+	v := math.Round(float64(m)*10000) / 10000
 	s := strconv.FormatFloat(v, 'f', -1, 64)
 	for i := 0; i < len(s); i++ {
 		if s[i] == '.' {

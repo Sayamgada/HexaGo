@@ -32,6 +32,7 @@ func main() {
 		H3Resolution:    cfg.H3Resolution,
 		Center:          center,
 		CitySpeedFactor: cfg.CitySpeedFactor,
+		MaxPickupKm:     cfg.MaxPickupKm,
 	}
 
 	// Persistence: Postgres (migrated on boot) when configured, else in memory.
@@ -98,9 +99,13 @@ func main() {
 		if cfg.OSRMURL != "" {
 			router = sim.NewOSRM(sim.OSRMOptions{BaseURL: cfg.OSRMURL, RPS: cfg.OSRMRPS})
 		}
+		demand := cfg.SimDemandPerMin
+		if demand == 0 {
+			demand = sim.AutoDemandPerMin(cfg.SimDrivers)
+		}
 		s, err := sim.New(sim.Options{
 			Service: svc, Publisher: hub, Router: router, Drivers: cfg.SimDrivers,
-			DemandPerMin: cfg.SimDemandPerMin, Center: center, Telemetry: batcher, Registry: reg,
+			DemandPerMin: demand, Center: center, Telemetry: batcher, Registry: reg,
 		})
 		if err != nil {
 			log.Fatalf("simulator: %v", err)
@@ -111,7 +116,7 @@ func main() {
 		}
 		routerOpts = append(routerOpts, server.WithSim(s))
 		go func() { s.Run(ctx); close(simDone) }()
-		log.Printf("DEMO_MODE: fleet simulator on (%d drivers, router %s)", cfg.SimDrivers, routerName(cfg))
+		log.Printf("DEMO_MODE: fleet simulator on (%d drivers, %.1f requests/min base demand, router %s)", cfg.SimDrivers, demand, routerName(cfg))
 	} else {
 		close(simDone)
 	}

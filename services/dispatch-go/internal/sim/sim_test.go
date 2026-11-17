@@ -200,7 +200,7 @@ func TestSpawnFleetMixAndPositions(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing %s", DriverID(i))
 		}
-		if km := geo.HaversineKm(center, d.Point()); km > 15 {
+		if km := geo.HaversineKm(center, d.Point()); km > cityRadiusKm {
 			t.Errorf("%s spawned %.1f km from centre", d.ID, km)
 		}
 		if d.Tier == fleet.TierAV {

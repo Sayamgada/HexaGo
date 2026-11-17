@@ -139,3 +139,56 @@ func TestMatchLatencyBudget(t *testing.T) {
 		t.Errorf("p99 match latency %v exceeds %v", p99, 4*latencyGoal)
 	}
 }
+
+// BenchmarkMatchSparse is the demo fleet (300 drivers): most requests need
+// the large-radius sweep and some fall back to a tier upgrade.
+func BenchmarkMatchSparse(b *testing.B) {
+	rng := rand.New(rand.NewSource(3))
+	_, m := seedCity(b, 300, rng)
+	reqs := make([]Request, 1024)
+	for i := range reqs {
+		reqs[i] = randomRequest(rng)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	matched := 0
+	for i := 0; i < b.N; i++ {
+		if _, err := m.Match(reqs[i%len(reqs)]); err == nil {
+			matched++
+		}
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(matched)/float64(b.N), "hit-rate")
+}
+
+// BenchmarkMatchEmptyCity is the worst case: every ring out to MaxPickupKm
+// for the requested tier and its whole upgrade chain, and nobody found.
+func BenchmarkMatchEmptyCity(b *testing.B) {
+	_, m := seedCity(b, 0, rand.New(rand.NewSource(1)))
+	req := Request{Pickup: center, Dropoff: dropoff, Tier: fleet.TierMini}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = m.Match(req)
+	}
+}
+
+// TestEmptyCityLatencyBudget keeps the exhaustive sweep inside the 5 ms budget.
+func TestEmptyCityLatencyBudget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("latency budget test skipped in -short mode")
+	}
+	_, m := seedCity(t, 0, rand.New(rand.NewSource(1)))
+	req := Request{Pickup: center, Dropoff: dropoff, Tier: fleet.TierMini}
+	lat := make([]time.Duration, 0, 200)
+	for i := 0; i < 200; i++ {
+		start := time.Now()
+		_, _ = m.Match(req)
+		lat = append(lat, time.Since(start))
+	}
+	sort.Slice(lat, func(i, j int) bool { return lat[i] < lat[j] })
+	t.Logf("empty city, full %.0f km sweep: p50=%v p99=%v", m.Config().MaxPickupKm, lat[100], lat[198])
+	if lat[100] > latencyGoal {
+		t.Errorf("p50 %v exceeds %v", lat[100], latencyGoal)
+	}
+}

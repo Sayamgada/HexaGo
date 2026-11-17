@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import '../../../config/app_config.dart';
 import '../../../theme/hexago_theme.dart';
 import '../../../widgets/hexagon.dart';
+import '../data/basemap.dart';
 import '../models/ops_models.dart';
 import '../state/fleet_tracker.dart';
 import '../state/ops_providers.dart';
@@ -22,14 +23,48 @@ Color statusColor(DriverStatus s) => switch (s) {
       DriverStatus.unknown => HexaColors.unknown,
     };
 
-/// City map with CARTO dark tiles and one painted layer for all cars.
-class FleetMap extends ConsumerWidget {
+/// City map: keyless CARTO dark tiles (OSM if CARTO serves no imagery) and
+/// one painted layer for all cars. The first fleet snapshot fits the camera
+/// to every vehicle; after that the operator controls the view.
+class FleetMap extends ConsumerStatefulWidget {
   const FleetMap({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hasKey = AppConfig.cartoApiKey.isNotEmpty;
-    final showTiles = ref.watch(showMapTilesProvider) && hasKey;
+  ConsumerState<FleetMap> createState() => _FleetMapState();
+}
+
+class _FleetMapState extends ConsumerState<FleetMap> {
+  final MapController _map = MapController();
+  FleetTracker? _tracker;
+  bool _ready = false;
+  bool _fitted = false;
+
+  void _attach(FleetTracker tracker) {
+    if (identical(tracker, _tracker)) return;
+    _tracker?.removeListener(_maybeFit);
+    _tracker = tracker..addListener(_maybeFit);
+  }
+
+  void _maybeFit() {
+    final t = _tracker;
+    if (_fitted || !_ready || t == null || t.isEmpty) return;
+    final bounds = fleetBounds(t.tracks.map((c) => LatLng(c.target.lat, c.target.lng)));
+    if (bounds == null) return;
+    _fitted = true;
+    _map.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.fromLTRB(40, 70, 40, 50), maxZoom: 14));
+  }
+
+  @override
+  void dispose() {
+    _tracker?.removeListener(_maybeFit);
+    _map.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _attach(ref.watch(fleetTrackerProvider));
+    final basemap = ref.watch(showMapTilesProvider) ? ref.watch(basemapProvider).value : null;
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Stack(
@@ -41,43 +76,42 @@ class FleetMap extends ConsumerWidget {
             ),
           ),
           FlutterMap(
-            options: const MapOptions(
-              initialCenter: LatLng(AppConfig.cityLat, AppConfig.cityLng),
-              initialZoom: 12.4,
-              minZoom: 9,
+            mapController: _map,
+            options: MapOptions(
+              // Bengaluru until the first fleet snapshot arrives.
+              initialCenter: const LatLng(AppConfig.cityLat, AppConfig.cityLng),
+              initialZoom: 11,
+              minZoom: 8,
               maxZoom: 18,
               backgroundColor: Colors.transparent,
-              interactionOptions: InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+              interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+              onMapReady: () {
+                _ready = true;
+                _maybeFit();
+              },
             ),
             children: [
-              if (showTiles)
+              if (basemap != null)
                 TileLayer(
-                  urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key={key}',
-                  additionalOptions: const {'key': AppConfig.cartoApiKey},
-                  subdomains: const ['a', 'b', 'c', 'd'],
-                  retinaMode: RetinaMode.isHighDensity(context),
+                  key: ValueKey('basemap-${basemap.name}'),
+                  urlTemplate: basemap.urlTemplate,
+                  fallbackUrl: basemap.fallbackUrl,
+                  subdomains: basemap.subdomains,
+                  retinaMode: basemap.subdomains.isNotEmpty && RetinaMode.isHighDensity(context),
+                  tileBuilder: basemap.darkFilter ? darkModeTileBuilder : null,
                   userAgentPackageName: 'com.hexago.hexago_app',
-                  maxZoom: 20,
+                  maxZoom: 19,
                 ),
               const FleetLayer(),
-              if (showTiles)
-                const SimpleAttributionWidget(
-                  source: Text('© OpenStreetMap contributors © CARTO'),
-                  backgroundColor: Color(0xAA0B0F17),
+              if (basemap != null)
+                SimpleAttributionWidget(
+                  key: const ValueKey('basemap-attribution'),
+                  source: Text(basemap.attribution),
+                  backgroundColor: const Color(0xAA0B0F17),
                 ),
             ],
           ),
           const Positioned(left: 10, bottom: 10, child: _Legend()),
-          if (!hasKey)
-            const Positioned(
-              right: 10,
-              bottom: 10,
-              child: Text(
-                'Basemap off: build with --dart-define=CARTO_API_KEY=…',
-                key: ValueKey('basemap-hint'),
-                style: TextStyle(fontSize: 10, color: HexaColors.textMuted),
-              ),
-            ),
         ],
       ),
     );

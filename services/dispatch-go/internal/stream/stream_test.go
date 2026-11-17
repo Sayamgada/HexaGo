@@ -413,3 +413,22 @@ func TestDecodeEnvelopeRoundTrip(t *testing.T) {
 		t.Fatalf("round trip: %v %+v", err, env)
 	}
 }
+
+func TestAgentEventMetaFields(t *testing.T) {
+	ts := time.Date(2026, 11, 16, 10, 30, 0, 0, time.UTC)
+	ev := stream.NewAgentEvent("dispatch_broker", "matched", "r", 0.9, 0.04237, false, ts)
+	if ev.LatencyMs != 0.0424 {
+		t.Fatalf("latency %v, want 0.0424 (sub-microsecond precision kept)", ev.LatencyMs)
+	}
+	ev.Kind, ev.RideID, ev.DriverID, ev.Tier, ev.RequestedTier, ev.Upgraded = "match", "714fcb12-aaaa", "d_007", "sedan", "mini", true
+	got, err := stream.Encode(stream.TopicOps, ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"topic":"ops","data":{"type":"agent_event","agent":"dispatch_broker","decision":"matched",` +
+		`"reasoning":"r","confidence":0.9,"latency_ms":0.0424,"used_fallback":false,"ts":"2026-11-16T10:30:00Z",` +
+		`"kind":"match","ride_id":"714fcb12-aaaa","driver_id":"d_007","tier":"sedan","requested_tier":"mini","upgraded":true}}`
+	if string(got) != want {
+		t.Fatalf("agent_event with meta:\n got %s\nwant %s", got, want)
+	}
+}

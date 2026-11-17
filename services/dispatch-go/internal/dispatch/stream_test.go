@@ -207,3 +207,146 @@ func TestCloseStaleRides(t *testing.T) {
 		t.Fatalf("counts %+v", c)
 	}
 }
+
+func TestMatchTwoKmOutIsFound(t *testing.T) {
+	svc, _, pub := newStreamHarness(t)
+	far := geo.Point{Lat: center.Lat + 2/111.195, Lng: center.Lng}
+	putDriver(t, svc, "d_far", far, fleet.TierMini)
+	view, err := svc.CreateRide(context.Background(), CreateRideInput{RiderID: "r", Pickup: &center, Dropoff: &dropoff, Tier: "mini"})
+	if err != nil || view.Match == nil || view.Match.Driver.ID != "d_far" {
+		t.Fatalf("2 km driver not matched: %v %+v", err, view.Match)
+	}
+	ev := pub.agentEvents()[0]
+	if ev.Kind != "match" || ev.RideID != view.Ride.ID || ev.DriverID != "d_far" || ev.Tier != "mini" || ev.Upgraded {
+		t.Fatalf("event meta %+v", ev)
+	}
+}
+
+func TestUpgradedMatchIsRecorded(t *testing.T) {
+	svc, mem, pub := newStreamHarness(t)
+	putDriver(t, svc, "d_sedan", center, fleet.TierSedan)
+	view, err := svc.CreateRide(context.Background(), CreateRideInput{RiderID: "r", Pickup: &center, Dropoff: &dropoff, Tier: "mini"})
+	if err != nil || view.Match == nil {
+		t.Fatalf("create: %v %+v", err, view)
+	}
+	if !view.Match.Upgraded || view.Match.Tier != "sedan" || view.Match.RequestedTier != "mini" {
+		t.Fatalf("match view tier fields %+v", view.Match)
+	}
+	if view.Ride.Tier != "mini" {
+		t.Errorf("ride keeps the requested tier, got %q", view.Ride.Tier)
+	}
+	ev := pub.agentEvents()[0]
+	if !ev.Upgraded || ev.Tier != "sedan" || ev.RequestedTier != "mini" {
+		t.Fatalf("event meta %+v", ev)
+	}
+	if !strings.Contains(ev.Decision, "upgraded") || !strings.Contains(ev.Reasoning, "mini") {
+		t.Fatalf("decision %q / reasoning %q should mention the upgrade", ev.Decision, ev.Reasoning)
+	}
+	stored, _ := mem.RecentEvents(context.Background(), 1)
+	if d := string(stored[0].Decision); !strings.Contains(d, `"upgraded":true`) || !strings.Contains(d, `"matched_tier":"sedan"`) {
+		t.Fatalf("stored decision %s", d)
+	}
+}
+
+func TestNoMatchReasoningExplainsSearch(t *testing.T) {
+	svc, mem, pub := newStreamHarness(t)
+	putDriver(t, svc, "d_auto", center, fleet.TierAuto) // wrong tier, never upgraded to
+	view, err := svc.CreateRide(context.Background(), CreateRideInput{RiderID: "r", Pickup: &center, Dropoff: &dropoff, Tier: "mini"})
+	if err != nil || view.Match != nil || view.Ride.Status != store.RideRequested {
+		t.Fatalf("want an open request: %v %+v", err, view)
+	}
+	ev := pub.agentEvents()[0]
+	if ev.Kind != "no_match" || ev.RideID != view.Ride.ID || ev.RequestedTier != "mini" {
+		t.Fatalf("event meta %+v", ev)
+	}
+	for _, want := range []string{"5.0 km", "0 candidates", "mini", "sedan", "premium"} {
+		if !strings.Contains(ev.Reasoning, want) {
+			t.Errorf("reasoning %q should mention %q", ev.Reasoning, want)
+		}
+	}
+	stored, _ := mem.RecentEvents(context.Background(), 1)
+	d := string(stored[0].Decision)
+	for _, want := range []string{`"search_radius_km":5`, `"candidates_found":0`, `"tiers_tried":["mini","sedan","premium"]`} {
+		if !strings.Contains(d, want) {
+			t.Errorf("stored decision %s missing %s", d, want)
+		}
+	}
+}
+
+func TestMaxPickupKmOption(t *testing.T) {
+	svc, err := New(Options{Center: center, MaxPickupKm: 1, Logger: log.New(io.Discard, "", 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	putDriver(t, svc, "d_far", geo.Point{Lat: center.Lat + 2/111.195, Lng: center.Lng}, fleet.TierMini)
+	view, err := svc.CreateRide(context.Background(), CreateRideInput{RiderID: "r", Pickup: &center, Dropoff: &dropoff, Tier: "mini"})
+	if err != nil || view.Match != nil {
+		t.Fatalf("1 km cap should leave the request open: %v %+v", err, view.Match)
+	}
+}
+
+func TestMatchLatencyKeepsMicroseconds(t *testing.T) {
+	svc, _, pub := newStreamHarness(t)
+	putDriver(t, svc, "d_001", center, fleet.TierSedan)
+	view, err := svc.CreateRide(context.Background(), CreateRideInput{RiderID: "r", Pickup: &center, Dropoff: &dropoff, Tier: "sedan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Match.LatencyMs < 0 || view.Match.LatencyMs > 5 {
+		t.Fatalf("latency %v ms", view.Match.LatencyMs)
+	}
+	ev := pub.agentEvents()[0]
+	if d := ev.LatencyMs - view.Match.LatencyMs; d > 0.0001 || d < -0.0001 {
+		t.Fatalf("event latency %v vs view %v: precision lost", ev.LatencyMs, view.Match.LatencyMs)
+	}
+}
+
+func TestRetryRideMatchesOpenRequestWhenADriverFreesUp(t *testing.T) {
+	svc, mem, pub := newStreamHarness(t)
+	var seen []store.RideStatus
+	svc.SetRideObserver(func(r store.Ride) { seen = append(seen, r.Status) })
+	ctx := context.Background()
+	open, err := svc.CreateRide(ctx, CreateRideInput{RiderID: "r", Pickup: &center, Dropoff: &dropoff, Tier: "sedan"})
+	if err != nil || open.Match != nil {
+		t.Fatalf("want an open request: %v %+v", err, open)
+	}
+	// Still nobody: no new event, no error, still open.
+	v, err := svc.RetryRide(ctx, open.Ride.ID)
+	if err != nil || v.Match != nil || v.Ride.Status != store.RideRequested {
+		t.Fatalf("retry without drivers: %v %+v", err, v)
+	}
+	if n := len(pub.agentEvents()); n != 1 {
+		t.Fatalf("failed retries must not flood the feed: %d events", n)
+	}
+
+	putDriver(t, svc, "d_001", center, fleet.TierSedan)
+	v, err = svc.RetryRide(ctx, open.Ride.ID)
+	if err != nil || v.Match == nil || v.Match.Driver.ID != "d_001" || v.Ride.Status != store.RideMatched {
+		t.Fatalf("retry with a driver: %v %+v", err, v)
+	}
+	r, _ := mem.GetRide(ctx, open.Ride.ID)
+	if r.Status != store.RideMatched || r.DriverID != "d_001" || len(v.Ride.Legs) != 2 {
+		t.Fatalf("stored ride %+v", r)
+	}
+	if d, _ := svc.Fleet().Get("d_001"); d.Status != fleet.StatusEnRoute {
+		t.Fatalf("driver status %s", d.Status)
+	}
+	evs := pub.agentEvents()
+	if last := evs[len(evs)-1]; last.Kind != "match" || last.RideID != open.Ride.ID || !strings.Contains(last.Decision, "re-dispatched") {
+		t.Fatalf("retry event %+v", last)
+	}
+	if len(seen) != 1 || seen[0] != store.RideMatched {
+		t.Fatalf("observer saw %v", seen)
+	}
+	m, _ := svc.Metrics(ctx)
+	if m.MatchesTotal != 1 || m.OpenRequests != 0 {
+		t.Fatalf("metrics %+v", m)
+	}
+
+	if _, err := svc.RetryRide(ctx, open.Ride.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retrying a matched ride: %v, want ErrConflict", err)
+	}
+	if _, err := svc.RetryRide(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown ride: %v, want ErrNotFound", err)
+	}
+}

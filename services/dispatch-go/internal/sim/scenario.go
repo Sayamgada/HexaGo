@@ -14,8 +14,11 @@ import (
 // Scenario parameters.
 const (
 	ScenarioDuration = 5 * time.Minute
-	ConcertBurst     = 20   // requests fired the moment the concert lets out
-	concertPerMin    = 30.0 // extra requests/min around the venue afterwards
+	ConcertBurst     = 40   // requests fired the moment the concert lets out
+	concertPerMin    = 45.0 // extra requests/min around the venue afterwards
+	RushBurst        = 25   // requests fired across the hotspots when rush hour starts
+	RainBurst        = 12   // requests fired when the rain starts
+	rainOfflineShare = 0.25 // share of idle drivers who log off in the rain
 	detourSideKm     = 0.45 // safety incident: swerve this far off the route...
 	detourAheadKm    = 0.15 // ...while moving this far forward
 	incidentSpeed    = 50.0 // km/h while deviating
@@ -49,26 +52,29 @@ func (s *Sim) TriggerScenario(ctx context.Context, name string) (ScenarioView, e
 	v := ScenarioView{Name: name, ActiveUntil: until, Location: s.center}
 	switch name {
 	case "rush_hour":
-		s.addScenario(scenarioState{name: name, until: until, demandMult: 2.5, speedFactor: 0.7})
-		v.Detail = "demand x2.5, traffic speed x0.7 for 5m"
+		s.addScenario(scenarioState{name: name, until: until, demandMult: 3, speedFactor: 0.75})
+		v.Detail = fmt.Sprintf("demand x3 and traffic speed x0.75 for 5m; %d requests across the hotspots now", RushBurst)
+		s.announce(ctx, fmt.Sprintf("scenario %s started: %s", name, v.Detail), "What-if scenario injected by the fleet simulator.")
+		s.createRides(ctx, s.burst(RushBurst, func() geo.Point { return s.jitter(s.pickHotspot().at, 1.0) }), now)
+		return v, nil
 	case "rain_storm":
-		s.addScenario(scenarioState{name: name, until: until, demandMult: 1.8, speedFactor: 0.55})
-		v.Detail = "demand x1.8, traffic speed x0.55 for 5m"
+		s.addScenario(scenarioState{name: name, until: until, demandMult: 2, speedFactor: 0.7})
+		off := s.logOff(rainOfflineShare, until)
+		v.Detail = fmt.Sprintf("demand x2, traffic 30%% slower and %d idle drivers offline for 5m", off)
+		s.announce(ctx, fmt.Sprintf("scenario %s started: %s", name, v.Detail), "What-if scenario injected by the fleet simulator.")
+		s.createRides(ctx, s.burst(RainBurst, func() geo.Point { return s.jitter(s.pickHotspot().at, 1.0) }), now)
+		return v, nil
 	case "concert_exit":
 		venue := shift(ConcertVenue, s.center)
 		venue = geo.Point{Lat: round(venue.Lat, 6), Lng: round(venue.Lng, 6)}
 		v.Location = venue
-		v.Detail = fmt.Sprintf("%d requests now, then +%.0f/min around the venue for 5m", ConcertBurst, concertPerMin)
+		v.Detail = fmt.Sprintf("%d requests now, then +%.0f/min around Palace Grounds for 5m", ConcertBurst, concertPerMin)
 		s.mu.Lock()
 		s.scenarios = append(s.scenarios, scenarioState{name: name, until: until, demandMult: 1, speedFactor: 0.9})
 		s.spikes = append(s.spikes, spike{name: "concert exit", at: venue, perMin: concertPerMin, until: until})
-		reqs := make([]rideRequest, ConcertBurst)
-		for i := range reqs {
-			p := s.jitter(venue, 0.3)
-			reqs[i] = rideRequest{rider: fmt.Sprintf("r_sim_%04d", s.rng.IntN(5000)), pickup: p, dropoff: s.randomDropoff(p), tier: s.pickTier()}
-		}
 		s.mu.Unlock()
-		s.announce(ctx, "scenario concert_exit started: "+v.Detail, "Crowd leaving M. Chinnaswamy Stadium; injected by the fleet simulator.")
+		reqs := s.burst(ConcertBurst, func() geo.Point { return s.jitter(venue, 0.3) })
+		s.announce(ctx, "scenario concert_exit started: "+v.Detail, "Crowd leaving Palace Grounds; injected by the fleet simulator.")
 		s.createRides(ctx, reqs, now)
 		return v, nil
 	case "safety_incident":
@@ -76,8 +82,6 @@ func (s *Sim) TriggerScenario(ctx context.Context, name string) (ScenarioView, e
 	default:
 		return ScenarioView{}, fmt.Errorf("%w: %q (want one of %v)", ErrUnknownScenario, name, Scenarios)
 	}
-	s.announce(ctx, fmt.Sprintf("scenario %s started: %s", name, v.Detail), "What-if scenario injected by the fleet simulator.")
-	return v, nil
 }
 
 func (s *Sim) addScenario(x scenarioState) {
@@ -141,7 +145,7 @@ func (s *Sim) advanceIncident(d *simDriver, now time.Time, dt float64) []effect 
 		g := top / 3.6 / dt / 9.81
 		return []effect{func(ctx context.Context) {
 			s.svc.RecordAgentEvent(ctx, dispatch.AgentEventInput{
-				Agent: "safety_sentinel", EventType: "route_deviation", RideID: rideID,
+				Agent: "safety_sentinel", EventType: "route_deviation", RideID: rideID, Kind: "incident", DriverID: id,
 				Input:    map[string]any{"driver_id": id, "lat": pos.Lat, "lng": pos.Lng, "deviation_m": math.Round(off * 1000), "speed_before_kmh": top},
 				Decision: fmt.Sprintf("flagged %s on ride %s: %.0f m off planned route, hard brake %.0f→0 km/h", id, rideID, off*1000, top),
 				Reasoning: fmt.Sprintf("Geofence rule (deterministic fallback): vehicle left the planned path by more than %.0f m "+
@@ -186,4 +190,32 @@ func distToPathKm(p geo.Point, pa *path) float64 {
 		best = geo.HaversineKm(p, pa.pts[0])
 	}
 	return best
+}
+
+// burst builds n requests with pickups from at (dropoffs and tiers random).
+func (s *Sim) burst(n int, at func() geo.Point) []rideRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reqs := make([]rideRequest, n)
+	for i := range reqs {
+		p := at()
+		reqs[i] = rideRequest{rider: fmt.Sprintf("r_sim_%04d", s.rng.IntN(5000)), pickup: p, dropoff: s.randomDropoff(p), tier: s.pickTier()}
+	}
+	return reqs
+}
+
+// logOff takes share of the idle drivers offline until `until` and returns
+// how many. They disappear from dispatch on the next Step.
+func (s *Sim) logOff(share float64, until time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, d := range s.order {
+		if d.ride != nil || d.incident != nil || s.rng.Float64() >= share {
+			continue
+		}
+		d.offlineUntil = until
+		n++
+	}
+	return n
 }

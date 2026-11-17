@@ -31,14 +31,14 @@ class MetricsStrip extends StatelessWidget {
       MetricTile(
         id: 'p50',
         label: 'Match p50',
-        value: m == null ? '—' : formatMs(m.p50Ms),
+        value: m == null ? '—' : formatLatency(m.p50Ms),
         icon: Icons.bolt,
         valueColor: m == null ? null : latencyColor(m.p50Ms),
       ),
       MetricTile(
         id: 'p99',
         label: 'Match p99',
-        value: m == null ? '—' : formatMs(m.p99Ms),
+        value: m == null ? '—' : formatLatency(m.p99Ms),
         icon: Icons.speed,
         valueColor: m == null ? null : latencyColor(m.p99Ms),
       ),

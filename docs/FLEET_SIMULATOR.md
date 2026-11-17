@@ -8,12 +8,13 @@ Code: `services/dispatch-go/internal/sim` (simulator), `internal/stream`
 ## Fleet
 
 - `SIM_DRIVERS` drivers (default **300**, keep 300 on Render), IDs `d_001`…,
-  spawned around `CITY_CENTER_LAT/LNG` (Bengaluru), 75% near demand hotspots
-  (MG Road, Koramangala, Indiranagar, Majestic, HSR, Bellandur, …).
+  spawned around `CITY_CENTER_LAT/LNG` (Bengaluru), 75% near the six demand hotspots
+  (MG Road, Koramangala, Indiranagar, Whitefield, Electronic City, Kempegowda Airport).
 - Exactly **15% autonomous vehicles** (`tier: "av"`, with `battery`); the rest are
   auto / mini / sedan / premium / xl. AVs drain 0.25%/km and recharge while parked.
 - One tick per second. Idle drivers park for a while, then drive toward a
-  hotspot (or an active demand spike). Assigned drivers drive to the pickup,
+  hotspot (or an active demand spike), preferring nearby ones (weight × e^(−km/5)) so
+  outlying areas keep their own supply. Assigned drivers drive to the pickup,
   then to the dropoff.
 
 ### Routing
@@ -51,14 +52,19 @@ through the public API are driven too when a simulated driver is matched.
 
 ## Demand
 
-Requests per minute = `SIM_DEMAND_PER_MIN` (default 6) × time-of-day factor ×
-scenario multipliers + spikes.
+Requests per minute = base × demo time-of-day factor × scenario multipliers + spikes.
 
-- **Time of day** (IST): commute peaks around 09:00 (×1.7) and 18:00 (×1.8), a
-  quiet night (×0.2 at 03:00); the daily mean is 1.
+- **Base demand**: `SIM_DEMAND_PER_MIN`, default `auto` = drivers × 0.5 ÷ 12 min
+  (12.5/min for 300 drivers), which keeps roughly **40–60% of drivers busy** at
+  steady state (`TestSteadyStateBusyShareWithAutoDemand`: 42–52% across noon,
+  evening peak and night; about 86–89% of requests matched).
+- **Time of day** (IST): the real curve has commute peaks around 09:00 (×1.7) and
+  18:00 (×1.8) and a quiet night (×0.2 at 03:00); the demo keeps 15% of that swing
+  (×0.88–×1.12) so the fleet is never idle or saturated.
 - **Random spikes**: about one every 10 minutes near a random hotspot, lasting 2–5 minutes.
-- Pickups are drawn near spikes, hotspots or anywhere in the city; trips are
-  1.5–7 km. Requests left unmatched for 90 s are cancelled (`no_driver_timeout`).
+- 85% of pickups are near a hotspot (σ ≈ 1 km), the rest anywhere in the city; trips
+  are 1.5–7 km. Open requests are re-dispatched every 5 s and cancelled
+  (`no_driver_timeout`) after 90 s.
 - On start-up, non-terminal rides from a previous process are cancelled
   (`gateway_restart`) because their drivers no longer exist.
 
@@ -68,9 +74,9 @@ scenario multipliers + spikes.
 |---|---|
 | `GET /v1/sim/config` | Current state: target/live drivers, demand, active scenarios and spikes, OSRM cache stats, telemetry stats |
 | `POST /v1/sim/config` | `{"drivers":int,"demand_per_min":float,"spike_lat":float,"spike_lng":float}`, all optional. `drivers` 0–2000 (busy drivers are removed after their trip); a spike adds 1.5× base demand (min 3/min) at that point for 10 min |
-| `POST /v1/sim/scenario/rush_hour` | demand ×2.5, traffic ×0.7 for 5 min |
-| `POST /v1/sim/scenario/rain_storm` | demand ×1.8, traffic ×0.55 for 5 min |
-| `POST /v1/sim/scenario/concert_exit` | 20 requests at M. Chinnaswamy Stadium at once, then +30/min there for 5 min |
+| `POST /v1/sim/scenario/rush_hour` | 25 requests across the hotspots at once, then demand ×3 and traffic ×0.75 for 5 min |
+| `POST /v1/sim/scenario/rain_storm` | 25% of idle drivers go `offline` at once (back after 5 min), 12 requests at once, then demand ×2 and traffic 30% slower for 5 min |
+| `POST /v1/sim/scenario/concert_exit` | 40 requests at Palace Grounds at once, then +45/min there for 5 min |
 | `POST /v1/sim/scenario/safety_incident` | the on-trip vehicle with the longest remaining trip swerves 450 m off its route at 50 km/h, brakes hard to a standstill, waits 25 s, then resumes. It streams with `status:"incident"` meanwhile, and the Safety Sentinel's geofence rule emits a `safety_sentinel` agent_event (`used_fallback: true`) that is also written to `agent_events`. `409` if no vehicle is on a trip |
 
 Unknown scenarios return `404`. With `DEMO_MODE=false` all `/v1/sim/*` routes return `503`.
@@ -100,6 +106,9 @@ Server → client, one JSON object per frame, **batched every 1 s**:
   `ops` keeps every message (up to 256 per second).
 - Every dispatch decision (match or no match) publishes a `dispatch_broker`
   agent_event and writes a row to `agent_events`.
+  agent_event may also carry `kind` (`match`, `no_match`, `incident`, `scenario`),
+  `ride_id`, `driver_id`, `tier`, `requested_tier` and `upgraded` (omitted when empty).
+  `latency_ms` and the metrics quantiles keep 0.1 µs resolution (e.g. `0.0424`).
 - `metrics` has the same shape as `GET /v1/metrics/dispatch` and is pushed every
   second while the instance has `ops` subscribers.
 - **Multi-instance**: with `REDIS_URL` the hub publishes through Redis pub/sub
@@ -136,7 +145,7 @@ go run ./cmd/streamprobe -url wss://dispatch-go.onrender.com/v1/stream -topics d
 |---|---|---|
 | `DEMO_MODE` | `true` | Start the simulator |
 | `SIM_DRIVERS` | `300` | Fleet size (0–2000) |
-| `SIM_DEMAND_PER_MIN` | `6` | Base requests per minute |
+| `SIM_DEMAND_PER_MIN` | `auto` | Base requests per minute; `auto` (or 0) sizes it to the fleet for ~50% busy |
 | `OSRM_URL` | `https://router.project-osrm.org` | OSRM base URL; `off` = straight lines |
 | `OSRM_RPS` | `1` | OSRM request rate limit |
 | `TELEMETRY_FLUSH_INTERVAL` | `5s` | Telemetry batch interval |

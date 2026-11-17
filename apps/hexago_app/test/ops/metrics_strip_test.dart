@@ -27,8 +27,8 @@ void main() {
     expect(_value(tester, 'idle').data, '96');
     expect(_value(tester, 'open').data, '41');
     expect(_value(tester, 'rides').data, '152');
-    expect(_value(tester, 'p50').data, '23 ms');
-    expect(_value(tester, 'p99').data, '87 ms');
+    expect(_value(tester, 'p50').data, '23.40 ms');
+    expect(_value(tester, 'p99').data, '87.20 ms');
     expect(_value(tester, 'matches').data, '12,345');
   });
 
@@ -49,7 +49,7 @@ void main() {
     expect(_value(tester, 'p99').style!.color, HexaColors.warn);
 
     await tester.pumpWidget(_host(with50(5, 200)));
-    expect(_value(tester, 'p50').data, '5.0 ms');
+    expect(_value(tester, 'p50').data, '5.00 ms');
     expect(_value(tester, 'p99').style!.color, HexaColors.bad);
   });
 

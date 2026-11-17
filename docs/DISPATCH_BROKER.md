@@ -5,9 +5,10 @@ Deterministic, non-LLM matcher that lives in the Go gateway. Code: `services/dis
 ## How a match works
 
 1. The pickup is mapped to an H3 cell (resolution `H3_RESOLUTION`, default 9 ≈ 0.1 km² cells).
-2. Rings around that cell are scanned one at a time (k = 0, 1, 2, 3). Expansion stops once 4 eligible drivers (best + 3 alternatives) are found, or after ring 3 (≈ 1 km at res 9).
-3. Eligible means `status = idle`, tier matches, and for `av` the battery covers pickup + trip at 0.25 %/km plus a 15 % reserve.
-4. Each candidate gets a score in [0, 1]:
+2. Rings around that cell are scanned one at a time (k = 0, 1, 2, …). Expansion stops once **5** eligible drivers of the requested tier are found, or when the disk covers `MAX_PICKUP_KM` (default 5 km; k = ⌈(R + edge) ÷ (1.5 × edge)⌉ = 18 rings at res 9). The first 3 rings are fetched up front; the large disk is only enumerated for sparse areas, and drivers beyond the straight-line radius are skipped. Typical cost at 10k drivers is ~15 µs; an empty city (full sweep, every upgrade tier) ~12 µs.
+3. **Free upgrade**: the same sweep also collects idle cars of the next tiers up (auto → mini → sedan → premium, at most two steps; XL and AV never upgrade). If the requested tier has no candidate within the radius, the nearest upgrade tier that has one is used and the decision is recorded with `"upgraded": true`. Only when every tier is empty is the request left open; the `agent_event` reasoning then states the rings and radius searched and that 0 candidates were found.
+4. Eligible means `status = idle`, tier matches, and for `av` the battery covers pickup + trip at 0.25 %/km plus a 15 % reserve.
+5. Each candidate gets a score in [0, 1]:
 
 | Component | Weight | Formula |
 |---|---|---|
@@ -17,7 +18,7 @@ Deterministic, non-LLM matcher that lives in the Go gateway. Code: `services/dis
 | Idle time | 0.15 | `idle / 20 min`, capped at 1 (fairness) |
 | Battery | 0.10 | AV: surplus over requirement ÷ headroom; non-AV: 1 |
 
-5. The top driver is claimed atomically (`idle → en_route`). If another request took it first, the next ranked driver is tried.
+6. The top driver is claimed atomically (`idle → en_route`). If another request took it first, the next ranked driver is tried.
 
 The fleet index is sharded 64 ways by driver ID and 64 ways by H3 cell, with one lock per shard. When `REDIS_URL` is set, positions are mirrored to the Redis GEO set `fleet:drivers:geo`. If Redis is down, a single warning is logged and the in-memory index keeps working.
 
@@ -33,7 +34,7 @@ Without CGO (Windows dev machines), `geo` uses a pure-Go hex grid with H3's edge
 | `POST /v1/rides/{id}/cancel` | `{reason}` (optional) | `200 {ride}`; `409` once the ride is in progress or finished |
 | `GET /v1/metrics/dispatch` | | `{"p50_ms","p95_ms","p99_ms","matches_total","active_drivers","idle_drivers","open_requests","rides_in_progress"}` |
 
-`match` contains the chosen driver, its score breakdown, up to 3 `alternatives` with their breakdowns, `candidates_considered`, `rings_searched` and `latency_ms`.
+`match` contains the chosen driver, its score breakdown, up to 3 `alternatives` with their breakdowns, `candidates_considered`, `rings_searched`, `search_radius_km`, `tier`, `requested_tier`, `upgraded` and `latency_ms` (float, 0.1 µs resolution; `p50_ms`/`p95_ms`/`p99_ms` in `/v1/metrics/dispatch` likewise). Open requests can be re-dispatched with `Service.RetryRide` (the simulator retries every 5 s); a failed retry publishes nothing.
 
 Ride lifecycle: `requested → matched → in_progress → completed`, or `→ cancelled`. Driver status updates drive it:
 - driver `on_trip` → ride `in_progress`
@@ -56,6 +57,7 @@ Without `DATABASE_URL`, or if Postgres can't be reached at boot, the service run
 |---|---|---|
 | `H3_RESOLUTION` | `9` | Driver index resolution (0–15) |
 | `CITY_SPEED_FACTOR` | `0.6` | Congestion multiplier on driving speed, in (0, 1] |
+| `MAX_PICKUP_KM` | `5` | Maximum straight-line pickup radius, in (0, 50] km |
 | `DATABASE_URL` | *(empty)* | Postgres; empty = in-memory |
 | `REDIS_URL` | *(empty)* | Redis GEO mirror; empty = none |
 

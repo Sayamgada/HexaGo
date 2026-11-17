@@ -163,6 +163,9 @@ class DriverPosition {
       };
 }
 
+/// Feed filter buckets.
+enum FeedCategory { match, unmatched, incident, other }
+
 class AgentEvent {
   AgentEvent({
     required this.agent,
@@ -173,7 +176,50 @@ class AgentEvent {
     required this.usedFallback,
     required this.ts,
     String? id,
+    this.kind = '',
+    this.rideId = '',
+    this.driverId = '',
+    this.tier = '',
+    this.requestedTier = '',
+    this.upgraded = false,
   }) : id = id ?? '${ts.microsecondsSinceEpoch}-$agent-${decision.hashCode}';
+
+  /// `match`, `no_match`, `incident`, `scenario` (empty from older servers).
+  final String kind;
+
+  /// Full ride UUID and driver id, when the event concerns one.
+  final String rideId;
+  final String driverId;
+
+  /// Tier of the car serving the ride, and the tier the rider asked for.
+  final String tier;
+  final String requestedTier;
+
+  /// A free tier upgrade was applied.
+  final bool upgraded;
+
+  /// Which feed filter this event belongs to. Uses [kind], falling back to
+  /// the decision text for servers that do not send it.
+  FeedCategory get category {
+    switch (kind) {
+      case 'match':
+        return FeedCategory.match;
+      case 'no_match':
+        return FeedCategory.unmatched;
+      case 'incident':
+        return FeedCategory.incident;
+      case '':
+        break;
+      default:
+        return FeedCategory.other;
+    }
+    final d = decision.toLowerCase();
+    final a = agent.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    if (a.startsWith('safetysentinel')) return FeedCategory.incident;
+    if (d.startsWith('no driver')) return FeedCategory.unmatched;
+    if (d.startsWith('matched')) return FeedCategory.match;
+    return FeedCategory.other;
+  }
 
   final String id;
   final String agent;
@@ -198,6 +244,12 @@ class AgentEvent {
       latencyMs: _toDouble(json['latency_ms']),
       usedFallback: _toBool(json['used_fallback']),
       ts: _toDateTime(json['ts']),
+      kind: json['kind']?.toString() ?? '',
+      rideId: json['ride_id']?.toString() ?? '',
+      driverId: json['driver_id']?.toString() ?? '',
+      tier: json['tier']?.toString() ?? '',
+      requestedTier: json['requested_tier']?.toString() ?? '',
+      upgraded: _toBool(json['upgraded']),
     );
   }
 
@@ -210,6 +262,12 @@ class AgentEvent {
         'latency_ms': latencyMs,
         'used_fallback': usedFallback,
         'ts': ts.toUtc().toIso8601String(),
+        if (kind.isNotEmpty) 'kind': kind,
+        if (rideId.isNotEmpty) 'ride_id': rideId,
+        if (driverId.isNotEmpty) 'driver_id': driverId,
+        if (tier.isNotEmpty) 'tier': tier,
+        if (requestedTier.isNotEmpty) 'requested_tier': requestedTier,
+        if (upgraded) 'upgraded': true,
       };
 }
 

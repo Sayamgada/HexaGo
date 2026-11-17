@@ -11,8 +11,9 @@ import (
 // defaultCenter is the Bengaluru centre the hotspot offsets were measured from.
 var defaultCenter = geo.Point{Lat: 12.9716, Lng: 77.5946}
 
-// ConcertVenue is M. Chinnaswamy Stadium (shifted with CITY_CENTER_*).
-var ConcertVenue = geo.Point{Lat: 12.9788, Lng: 77.5996}
+// ConcertVenue is Palace Grounds, Bengaluru's big open-air concert venue
+// (shifted with CITY_CENTER_*).
+var ConcertVenue = geo.Point{Lat: 12.9980, Lng: 77.5920}
 
 type hotspot struct {
 	name   string
@@ -20,20 +21,15 @@ type hotspot struct {
 	weight float64
 }
 
-// Bengaluru demand hotspots, all within ~12 km of the centre.
+// Bengaluru demand hotspots: the CBD, the two big nightlife/startup districts,
+// both IT corridors and the airport. Weights are relative request shares.
 var baseHotspots = []hotspot{
-	{"MG Road", geo.Point{Lat: 12.9756, Lng: 77.6066}, 1.2},
+	{"MG Road", geo.Point{Lat: 12.9756, Lng: 77.6066}, 1.3},
 	{"Koramangala", geo.Point{Lat: 12.9352, Lng: 77.6245}, 1.3},
-	{"Indiranagar", geo.Point{Lat: 12.9784, Lng: 77.6408}, 1.2},
-	{"Majestic", geo.Point{Lat: 12.9767, Lng: 77.5713}, 1.1},
-	{"HSR Layout", geo.Point{Lat: 12.9116, Lng: 77.6474}, 1.0},
-	{"Bellandur", geo.Point{Lat: 12.9304, Lng: 77.6784}, 1.0},
-	{"Marathahalli", geo.Point{Lat: 12.9569, Lng: 77.7011}, 0.9},
-	{"Jayanagar", geo.Point{Lat: 12.9250, Lng: 77.5938}, 0.9},
-	{"BTM Layout", geo.Point{Lat: 12.9166, Lng: 77.6101}, 0.9},
-	{"Malleshwaram", geo.Point{Lat: 13.0031, Lng: 77.5643}, 0.8},
-	{"Hebbal", geo.Point{Lat: 13.0358, Lng: 77.5970}, 0.8},
-	{"Yeshwanthpur", geo.Point{Lat: 13.0285, Lng: 77.5403}, 0.7},
+	{"Indiranagar", geo.Point{Lat: 12.9784, Lng: 77.6408}, 1.1},
+	{"Whitefield", geo.Point{Lat: 12.9698, Lng: 77.7500}, 1.0},
+	{"Electronic City", geo.Point{Lat: 12.8452, Lng: 77.6602}, 0.9},
+	{"Kempegowda Airport", geo.Point{Lat: 13.1986, Lng: 77.7066}, 0.6},
 }
 
 // shift moves p by the offset between the configured and default centres.
@@ -41,8 +37,32 @@ func shift(p, center geo.Point) geo.Point {
 	return geo.Point{Lat: p.Lat + center.Lat - defaultCenter.Lat, Lng: p.Lng + center.Lng - defaultCenter.Lng}
 }
 
-// cityRadiusKm bounds spawn points, wander targets and trips.
-const cityRadiusKm = 12.0
+// cityRadiusKm bounds spawn points, wander targets and trips; it reaches the
+// airport (~28 km north of the centre).
+const cityRadiusKm = 32.0
+
+// hotspotShare of base demand starts near a hotspot; the rest is city-wide.
+const hotspotShare = 0.85
+
+// Demo calibration: AutoDemandPerMin keeps about DemoTargetBusy of the fleet
+// on a ride at a time-of-day factor of 1 (Little's law: busy = rate × ride time).
+const (
+	DemoTargetBusy = 0.5
+	avgRideMinutes = 12.0 // effective accept + pickup + trip + dwell per request, calibrated by TestSteadyStateBusyShareWithAutoDemand
+	curveAmplitude = 0.15 // the demo keeps 15% of the real day/night swing
+)
+
+// AutoDemandPerMin is the base demand that keeps ~50% of `drivers` busy.
+func AutoDemandPerMin(drivers int) float64 {
+	return float64(drivers) * DemoTargetBusy / avgRideMinutes
+}
+
+// curve is the demo's damped time-of-day factor: same shape as
+// TimeOfDayFactor, but a night-time demo still has traffic and a peak-hour
+// demo does not saturate the fleet.
+func (s *Sim) curve(t time.Time) float64 {
+	return 1 + curveAmplitude*(TimeOfDayFactor(t)-1)
+}
 
 // Hourly demand (IST), normalised so the daily mean is 1: morning and evening
 // commute peaks, a flat afternoon and a quiet night.
@@ -174,7 +194,7 @@ func (s *Sim) randomPickup(baseRate float64) geo.Point {
 		}
 		r -= sp.perMin
 	}
-	if s.rng.Float64() < 0.8 {
+	if s.rng.Float64() < hotspotShare {
 		return s.jitter(s.pickHotspot().at, 1.0)
 	}
 	return s.jitter(s.center, 5)
@@ -191,4 +211,27 @@ func (s *Sim) randomDropoff(pickup geo.Point) geo.Point {
 		}
 	}
 	return s.jitter(s.pickHotspot().at, 0.8)
+}
+
+// rebalanceKm is the distance scale for idle repositioning: a hotspot this
+// far away is e times less attractive than one next door, so outlying areas
+// (Whitefield, Electronic City, the airport) keep their own supply instead of
+// draining into the central cluster.
+const rebalanceKm = 5.0
+
+// pickHotspotNear picks a hotspot by weight × exp(−distance / rebalanceKm).
+func (s *Sim) pickHotspotNear(p geo.Point) hotspot {
+	var w [16]float64
+	total := 0.0
+	for i, h := range s.hotspots {
+		w[i] = h.weight * math.Exp(-geo.HaversineKm(p, h.at)/rebalanceKm)
+		total += w[i]
+	}
+	r := s.rng.Float64() * total
+	for i, h := range s.hotspots {
+		if r -= w[i]; r <= 0 {
+			return h
+		}
+	}
+	return s.hotspots[len(s.hotspots)-1]
 }

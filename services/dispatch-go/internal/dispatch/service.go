@@ -41,6 +41,7 @@ type Options struct {
 	H3Resolution    int       // 0 = geo.DefaultResolution
 	Center          geo.Point // city centre (HexGrid projection reference)
 	CitySpeedFactor float64   // 0 = matching default
+	MaxPickupKm     float64   // 0 = matching default (5 km)
 	Store           store.Store
 	Telemetry       store.TelemetryStore
 	Mirror          fleet.Mirror
@@ -107,6 +108,9 @@ func New(o Options) (*Service, error) {
 	cfg := matching.DefaultConfig()
 	if o.CitySpeedFactor > 0 {
 		cfg.CitySpeedFactor = o.CitySpeedFactor
+	}
+	if o.MaxPickupKm > 0 {
+		cfg.MaxPickupKm = o.MaxPickupKm
 	}
 
 	s := &Service{
@@ -178,13 +182,17 @@ type Alternative struct {
 
 // MatchView explains how a ride's driver was chosen.
 type MatchView struct {
-	Driver        fleet.Driver       `json:"driver"`
-	Ring          int                `json:"ring"`
-	Score         matching.Breakdown `json:"score"`
-	Alternatives  []Alternative      `json:"alternatives"`
-	Considered    int                `json:"candidates_considered"`
-	RingsSearched int                `json:"rings_searched"`
-	LatencyMs     float64            `json:"latency_ms"`
+	Driver         fleet.Driver       `json:"driver"`
+	Ring           int                `json:"ring"`
+	Score          matching.Breakdown `json:"score"`
+	Alternatives   []Alternative      `json:"alternatives"`
+	Considered     int                `json:"candidates_considered"`
+	RingsSearched  int                `json:"rings_searched"`
+	SearchRadiusKm float64            `json:"search_radius_km"`
+	Tier           string             `json:"tier"`           // tier of the assigned car
+	RequestedTier  string             `json:"requested_tier"` // tier the rider asked for
+	Upgraded       bool               `json:"upgraded"`       // free upgrade (mini -> sedan -> premium)
+	LatencyMs      float64            `json:"latency_ms"`
 }
 
 // RideView is the API representation of a ride.
@@ -244,21 +252,9 @@ func (s *Service) CreateRide(ctx context.Context, in CreateRideInput) (RideView,
 		UpdatedAt:  now,
 	}
 
-	// Claim the best driver still idle; another request may have taken it
-	// between scoring and now, so fall through the ranked list.
 	var view *MatchView
 	if err == nil {
-		for i, c := range res.Ranked {
-			claimed, cerr := s.fleet.Claim(c.Driver.ID, fleet.StatusIdle, fleet.StatusEnRoute)
-			if cerr != nil {
-				continue
-			}
-			res = res.WithBest(i)
-			res.Best.Driver = claimed
-			view = buildMatchView(res)
-			s.assign(&ride, res.Best, tripKm)
-			break
-		}
+		res, view = s.claimBest(&ride, res, tripKm)
 	}
 
 	if err := s.store.CreateRide(ctx, ride); err != nil {
@@ -272,11 +268,81 @@ func (s *Service) CreateRide(ctx context.Context, in CreateRideInput) (RideView,
 	} else {
 		s.rec.IncUnmatched()
 	}
-	s.recordMatchEvent(ctx, ride, req, view, res)
+	s.recordMatchEvent(ctx, ride, req, view, res, "")
 	if view != nil {
 		s.notify(ride)
 	}
 	return RideView{Ride: ride, Match: view}, nil
+}
+
+// claimBest claims the best driver still idle; another request may have taken
+// it between scoring and now, so it falls through the ranked list. On success
+// ride is assigned and the returned view is non-nil.
+func (s *Service) claimBest(ride *store.Ride, res matching.Result, tripKm float64) (matching.Result, *MatchView) {
+	for i, c := range res.Ranked {
+		claimed, err := s.fleet.Claim(c.Driver.ID, fleet.StatusIdle, fleet.StatusEnRoute)
+		if err != nil {
+			continue
+		}
+		res = res.WithBest(i)
+		res.Best.Driver = claimed
+		s.assign(ride, res.Best, tripKm)
+		return res, buildMatchView(res)
+	}
+	return res, nil
+}
+
+// RetryRide re-runs dispatch for an open request (status "requested"), e.g.
+// once drivers have freed up. A retry that still finds nobody changes nothing
+// and publishes nothing, so periodic retries never flood the ops feed. Legs
+// are immutable in the store, so a retried ride returns them in the view only.
+func (s *Service) RetryRide(ctx context.Context, id string) (RideView, error) {
+	r, err := s.store.GetRide(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return RideView{}, fmt.Errorf("%w: ride %s", ErrNotFound, id)
+	}
+	if err != nil {
+		return RideView{}, err
+	}
+	if r.Status != store.RideRequested {
+		return RideView{}, fmt.Errorf("%w: ride is %s, not %s", ErrConflict, r.Status, store.RideRequested)
+	}
+	req := matching.Request{Pickup: r.Pickup, Dropoff: r.Dropoff, Tier: fleet.Tier(r.Tier)}
+	res, err := s.matcher.Match(req)
+	if errors.Is(err, matching.ErrNoCandidates) {
+		return RideView{Ride: r}, nil
+	}
+	if err != nil {
+		return RideView{}, err
+	}
+
+	s.rideMu.Lock()
+	cur, err := s.store.GetRide(ctx, id) // the rider may have cancelled meanwhile
+	if err != nil || cur.Status != store.RideRequested {
+		s.rideMu.Unlock()
+		if err == nil {
+			return RideView{Ride: cur}, fmt.Errorf("%w: ride is %s", ErrConflict, cur.Status)
+		}
+		return RideView{}, err
+	}
+	res, view := s.claimBest(&cur, res, cur.DistanceKm)
+	if view == nil {
+		s.rideMu.Unlock()
+		return RideView{Ride: cur}, nil
+	}
+	cur.UpdatedAt = s.now()
+	if err := s.store.UpdateRide(ctx, cur); err != nil {
+		s.rideMu.Unlock()
+		s.release(cur.DriverID)
+		return RideView{}, fmt.Errorf("persist ride: %w", err)
+	}
+	s.rideMu.Unlock()
+
+	s.rec.IncMatched()
+	wait := cur.UpdatedAt.Sub(cur.CreatedAt).Round(time.Second)
+	s.recordMatchEvent(ctx, cur, req, view, res, fmt.Sprintf("re-dispatched after %s waiting", wait))
+	s.notify(cur)
+	return RideView{Ride: cur, Match: view}, nil
 }
 
 // SetRideObserver registers fn to be called (synchronously; it must not block
@@ -313,6 +379,10 @@ type AgentEventInput struct {
 	Confidence   float64
 	LatencyMs    float64
 	UsedFallback bool
+	// Optional stream metadata (see stream.AgentEvent).
+	Kind     string
+	DriverID string
+	Tier     string
 }
 
 // RecordAgentEvent writes e to agent_events and publishes it on the ops topic.
@@ -329,7 +399,9 @@ func (s *Service) RecordAgentEvent(ctx context.Context, e AgentEventInput) {
 	}); err != nil {
 		s.log.Printf("WARN dispatch: write agent_events: %v", err)
 	}
-	s.publish(stream.NewAgentEvent(e.Agent, e.Decision, e.Reasoning, e.Confidence, e.LatencyMs, e.UsedFallback, now))
+	ev := stream.NewAgentEvent(e.Agent, e.Decision, e.Reasoning, e.Confidence, e.LatencyMs, e.UsedFallback, now)
+	ev.Kind, ev.RideID, ev.DriverID, ev.Tier = e.Kind, e.RideID, e.DriverID, e.Tier
+	s.publish(ev)
 }
 
 // AdvanceRide moves a ride along its trip lifecycle and keeps the driver's
@@ -396,13 +468,17 @@ func (s *Service) assign(ride *store.Ride, best matching.Candidate, tripKm float
 
 func buildMatchView(res matching.Result) *MatchView {
 	v := &MatchView{
-		Driver:        res.Best.Driver,
-		Ring:          res.Best.Ring,
-		Score:         res.Best.Score,
-		Alternatives:  make([]Alternative, 0, len(res.Alternatives)),
-		Considered:    res.Considered,
-		RingsSearched: res.RingsSearched,
-		LatencyMs:     float64(res.Latency) / float64(time.Millisecond),
+		Driver:         res.Best.Driver,
+		Ring:           res.Best.Ring,
+		Score:          res.Best.Score,
+		Alternatives:   make([]Alternative, 0, len(res.Alternatives)),
+		Considered:     res.Considered,
+		RingsSearched:  res.RingsSearched,
+		SearchRadiusKm: res.SearchRadiusKm,
+		Tier:           string(res.Tier),
+		RequestedTier:  string(res.RequestedTier),
+		Upgraded:       res.Upgraded,
+		LatencyMs:      float64(res.Latency) / float64(time.Millisecond),
 	}
 	for _, a := range res.Alternatives {
 		v.Alternatives = append(v.Alternatives, Alternative{
@@ -419,7 +495,7 @@ func (s *Service) release(driverID string) {
 	}
 }
 
-func (s *Service) recordMatchEvent(ctx context.Context, ride store.Ride, req matching.Request, view *MatchView, res matching.Result) {
+func (s *Service) recordMatchEvent(ctx context.Context, ride store.Ride, req matching.Request, view *MatchView, res matching.Result, note string) {
 	input, _ := json.Marshal(map[string]any{"pickup": req.Pickup, "dropoff": req.Dropoff, "tier": req.Tier})
 	ev := store.AgentEvent{
 		Agent:     AgentName,
@@ -435,15 +511,28 @@ func (s *Service) recordMatchEvent(ctx context.Context, ride store.Ride, req mat
 		ev.Decision, _ = json.Marshal(map[string]any{
 			"driver_id": view.Driver.ID, "score": view.Score, "alternatives": view.Alternatives,
 			"candidates_considered": view.Considered, "rings_searched": view.RingsSearched,
+			"search_radius_km": view.SearchRadiusKm, "requested_tier": view.RequestedTier,
+			"matched_tier": view.Tier, "upgraded": view.Upgraded,
 		})
 	} else {
-		ev.Decision, _ = json.Marshal(map[string]any{"rings_searched": res.RingsSearched})
+		ev.Decision, _ = json.Marshal(map[string]any{
+			"rings_searched": res.RingsSearched, "search_radius_km": res.SearchRadiusKm,
+			"candidates_found": res.Considered, "requested_tier": req.Tier, "tiers_tried": res.TiersTried,
+		})
 	}
 	if err := s.store.RecordEvent(ctx, ev); err != nil {
 		s.log.Printf("WARN dispatch: write agent_events: %v", err)
 	}
 	decision, reasoning := describeMatch(ride, req, view, res)
-	s.publish(stream.NewAgentEvent(AgentName, decision, reasoning, ev.Confidence, ev.LatencyMs, false, ev.CreatedAt))
+	if note != "" {
+		decision += "; " + note
+	}
+	pub := stream.NewAgentEvent(AgentName, decision, reasoning, ev.Confidence, ev.LatencyMs, false, ev.CreatedAt)
+	pub.Kind, pub.RideID, pub.RequestedTier = ev.EventType, ride.ID, string(req.Tier)
+	if view != nil {
+		pub.DriverID, pub.Tier, pub.Upgraded = view.Driver.ID, view.Tier, view.Upgraded
+	}
+	s.publish(pub)
 }
 
 func describeMatch(ride store.Ride, req matching.Request, view *MatchView, res matching.Result) (decision, reasoning string) {
@@ -452,14 +541,32 @@ func describeMatch(ride store.Ride, req matching.Request, view *MatchView, res m
 		rings += "s"
 	}
 	if view == nil {
-		return fmt.Sprintf("no driver available for ride %s (%s); request left open", ride.ID, req.Tier),
-			fmt.Sprintf("Searched %s around the pickup; no idle %s driver was eligible.", rings, req.Tier)
+		tiers := make([]string, len(res.TiersTried))
+		for i, t := range res.TiersTried {
+			tiers[i] = string(t)
+		}
+		decision = fmt.Sprintf("no driver available for ride %s (%s); request left open", ride.ID, req.Tier)
+		if res.Considered > 0 {
+			return decision, fmt.Sprintf("Searched %s (~%.1f km) around the pickup and found %d candidates, "+
+				"but every one was claimed by a concurrent request.", rings, res.SearchRadiusKm, res.Considered)
+		}
+		return decision, fmt.Sprintf("Searched %s out to the %.1f km pickup radius and found 0 candidates "+
+			"among idle %s drivers; the request stays open until a driver frees up.",
+			rings, res.SearchRadiusKm, strings.Join(tiers, "/"))
 	}
 	sc := view.Score
 	decision = fmt.Sprintf("matched ride %s to %s (%s), pickup ETA %.1f min",
 		ride.ID, view.Driver.ID, view.Driver.Tier, sc.ETASeconds/60)
-	reasoning = fmt.Sprintf("Best of %d candidates within %s: %.2f km away; scores ETA %.2f, momentum %.2f, rating %.2f, idle %.2f, battery %.2f → %.2f.",
-		view.Considered, rings, sc.DistanceKm, sc.ETA, sc.Momentum, sc.Rating, sc.Idle, sc.Battery, sc.Total)
+	if view.Upgraded {
+		decision += fmt.Sprintf(", upgraded from %s", view.RequestedTier)
+	}
+	reasoning = fmt.Sprintf("Best of %d candidates within %s (~%.1f km): ", view.Considered, rings, view.SearchRadiusKm)
+	if view.Upgraded {
+		reasoning = fmt.Sprintf("No idle %s within %.1f km, so a free upgrade to %s was offered. ",
+			view.RequestedTier, res.SearchRadiusKm, view.Tier) + reasoning
+	}
+	reasoning += fmt.Sprintf("%.2f km away; scores ETA %.2f, momentum %.2f, rating %.2f, idle %.2f, battery %.2f → %.2f.",
+		sc.DistanceKm, sc.ETA, sc.Momentum, sc.Rating, sc.Idle, sc.Battery, sc.Total)
 	if len(view.Alternatives) > 0 {
 		a := view.Alternatives[0]
 		reasoning += fmt.Sprintf(" Runner-up %s scored %.2f.", a.DriverID, a.Score.Total)

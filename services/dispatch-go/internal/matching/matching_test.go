@@ -237,7 +237,7 @@ func TestMatchPicksBestAndAlternatives(t *testing.T) {
 	if res.Considered != 5 {
 		t.Errorf("Considered = %d, want 5", res.Considered)
 	}
-	if res.RingsSearched < 1 || res.RingsSearched > DefaultConfig().MaxRings {
+	if res.RingsSearched < 1 || res.RingsSearched > 4 {
 		t.Errorf("RingsSearched = %d", res.RingsSearched)
 	}
 	if res.Latency < 0 { // can be 0 on Windows' coarse clock
@@ -292,7 +292,8 @@ func TestMatchExpandsRings(t *testing.T) {
 	}{
 		{"same cell", 0, true},
 		{"about two rings out", 3 * edge, true},
-		{"beyond three rings", 12 * edge, false},
+		{"beyond three rings, inside max pickup", 12 * edge, true},
+		{"beyond max pickup radius", 6.0, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -380,8 +381,8 @@ func TestMatchObserverRecordsEveryAttempt(t *testing.T) {
 	if obs.n != 2 {
 		t.Errorf("observer called %d times, want 2", obs.n)
 	}
-	if m.Config().MaxRings != 3 {
-		t.Errorf("Config().MaxRings = %d", m.Config().MaxRings)
+	if c := m.Config(); c.MaxPickupKm != 5 || c.MinCandidates != 5 || !c.AllowUpgrade {
+		t.Errorf("Config() = %+v", c)
 	}
 }
 
