@@ -50,9 +50,13 @@ MAX_FILES_PER_PATCH = 5
 CONTEXT_CHAR_CAP = 60_000
 LOG_EXCERPT_CAP = 12_000
 OUTPUT_TAIL_CAP = 6_000
-DEFAULT_MODEL = "gemini/gemini-3.8-flash"
+DEFAULT_MODEL = "gemini/gemini-3.5-flash"
 # Tried in order after LLM_MODEL (override with LLM_FALLBACK_MODELS, comma-separated).
-DEFAULT_FALLBACK_MODELS = ("gemini/gemini-3.8-flash", "gemini/gemini-3.5-flash-lite")
+DEFAULT_FALLBACK_MODELS = ("gemini/gemini-3-flash-preview", "gemini/gemini-3.5-flash-lite")
+# Per-call provider timeout. Thinking models (gemini-3.5-flash) take ~40 s on a
+# repair prompt, so never go below 90 s (override with SELF_HEAL_LLM_TIMEOUT_S).
+MIN_LLM_TIMEOUT_S = 90
+DEFAULT_LLM_TIMEOUT_S = 180
 AUTOFIX_PREFIX = "autofix/"
 AUTOFIX_MARKER = "[ai-autofix"  # in autofix PR titles, hence squash-merge commits
 LABEL_OK = "ai-autofix"
@@ -511,12 +515,21 @@ def parse_llm_response(text: str) -> tuple[str, str]:
     return diff, explanation[:1_500]
 
 
+def llm_timeout_s(env: dict[str, str] | None = None) -> int:
+    raw = (os.environ if env is None else env).get("SELF_HEAL_LLM_TIMEOUT_S", "")
+    try:
+        value = int(float(raw)) if raw.strip() else DEFAULT_LLM_TIMEOUT_S
+    except ValueError:
+        value = DEFAULT_LLM_TIMEOUT_S
+    return max(MIN_LLM_TIMEOUT_S, value)
+
+
 def call_llm(messages: list[dict], model: str,
-             completion: Callable | None = None) -> str:
+             completion: Callable | None = None, timeout: int | None = None) -> str:
     if completion is None:
         import litellm  # heavy import; only needed for real runs
         completion = litellm.completion
-    kwargs = {"temperature": 0, "timeout": 180, "drop_params": True}
+    kwargs = {"temperature": 0, "timeout": timeout or llm_timeout_s(), "drop_params": True}
     try:
         resp = completion(model=model, messages=messages, **kwargs)
     except Exception as e:
@@ -543,10 +556,13 @@ RETRY_DELAYS_S = (15, 30, 60, 90)
 
 
 class LLM:
-    """Calls the first model that works.
+    """Walks the model chain (LLM_MODEL, then LLM_FALLBACK_MODELS) in order.
 
-    Transient errors (429/5xx/timeouts) are retried with backoff on the same
-    model; a retired model (404) is dropped for the rest of the run.
+    - 404 / retired model, or a spent quota: dropped for the rest of the run.
+    - 429 / 5xx / timeout: back off (next entry of ``delays``), then move on to
+      the next model; after a pass that backed off, the chain starts over
+      from the top (so at most len(delays) + 1 passes).
+    - Any other error: move on to the next model.
     """
 
     def __init__(self, models: list[str], completion: Callable | None = None,
@@ -559,25 +575,33 @@ class LLM:
         self.errors: list[str] = []
 
     def __call__(self, messages: list[dict]) -> str:
-        failures = []
-        for model in list(self.models):
-            for wait in (*self.delays, None):
+        failures: list[str] = []
+        waits = list(self.delays)
+        while True:
+            backed_off = False
+            for model in list(self.models):
                 try:
                     text = call_llm(messages, model, self.completion)
                 except Exception as e:  # provider errors vary by backend
                     kind = f"{type(e).__name__} {e}"
                     msg = f"{model}: {type(e).__name__}: {e}"[:600]
                     self.errors.append(msg)
-                    if QUOTA_RE.search(kind) or (RETIRED_MODEL_RE.search(kind) and not TRANSIENT_RE.search(kind)):
-                        self.models.remove(model)
-                    elif TRANSIENT_RE.search(kind) and wait is not None:
-                        print(f"self-heal: {model} transient error, retrying in {wait}s", flush=True)
-                        self.sleep(wait)
-                        continue
                     failures.append(msg)
-                    break
+                    if QUOTA_RE.search(kind) or (RETIRED_MODEL_RE.search(kind) and not TRANSIENT_RE.search(kind)):
+                        print(f"self-heal: dropping {model} for this run", flush=True)
+                        self.models.remove(model)
+                    elif TRANSIENT_RE.search(kind):
+                        if waits:
+                            wait = waits.pop(0)
+                            print(f"self-heal: {model} transient error, backing off {wait}s "
+                                  "then moving on", flush=True)
+                            self.sleep(wait)
+                            backed_off = True
+                    continue
                 self.used = model
                 return text
+            if not (backed_off and self.models):
+                break
         raise RuntimeError("every model failed: " + " | ".join(failures or ["no models configured"]))
 
 

@@ -886,15 +886,16 @@ def test_llm_retries_transient_errors_with_backoff():
     assert llm([]) == "ok" and waits == [15, 30] and llm.models == ["gemini/x"]
 
 
-def test_llm_gives_up_after_retries_then_tries_next_model():
-    waits = []
+def test_llm_backs_off_once_then_moves_to_next_model():
+    waits, calls = [], []
 
     def completion(model, **kw):
+        calls.append(model)
         if model == "busy":
             raise ServiceUnavailableError("503 UNAVAILABLE")
         return _reply("from " + model)
     llm = sh.LLM(["busy", "spare"], completion, sleep=waits.append, delays=(1, 2))
-    assert llm([]) == "from spare" and waits == [1, 2]
+    assert llm([]) == "from spare" and waits == [1] and calls == ["busy", "spare"]
     assert llm.models == ["busy", "spare"]  # busy is not retired
 
 
@@ -974,3 +975,48 @@ def test_no_diff_attempt_records_raw_reply(broken_repo):
     llm = scripted_llm("I think the bug is in add()", "still no diff", "nope")
     res = sh.heal([DEMO_SUITE], sh.Failure(), broken_repo, ["calc.py"], llm)
     assert "Raw reply (excerpt):\nI think the bug is in add()" in res.attempts[0].output
+
+
+def test_llm_walks_configured_chain_in_order():
+    """LLM_MODEL first, then LLM_FALLBACK_MODELS: 404 drops, 429 backs off and moves on."""
+    waits, calls = [], []
+    env = {"LLM_MODEL": "gemini/gemini-3.5-flash",
+           "LLM_FALLBACK_MODELS": "gemini/gemini-3-flash-preview,gemini/gemini-3.5-flash-lite"}
+
+    def completion(model, **kw):
+        calls.append(model)
+        if model == "gemini/gemini-3.5-flash":
+            raise NotFoundError("404 models/gemini-3.5-flash is not found")
+        if model == "gemini/gemini-3-flash-preview":
+            raise RateLimitError("429 Too Many Requests")
+        return _reply("from " + model)
+    llm = sh.LLM(sh.models_from_env(env), completion, sleep=waits.append, delays=(7, 9))
+    assert llm([]) == "from gemini/gemini-3.5-flash-lite"
+    assert calls == ["gemini/gemini-3.5-flash", "gemini/gemini-3-flash-preview",
+                     "gemini/gemini-3.5-flash-lite"]
+    assert waits == [7] and llm.used == "gemini/gemini-3.5-flash-lite"
+    assert llm.models == ["gemini/gemini-3-flash-preview", "gemini/gemini-3.5-flash-lite"]
+
+
+def test_llm_restarts_chain_while_backoff_remains():
+    waits, calls = [], []
+    replies = iter([ServiceUnavailableError("503"), RateLimitError("429"), None])
+
+    def completion(model, **kw):
+        calls.append(model)
+        r = next(replies)
+        if r:
+            raise r
+        return _reply("ok")
+    assert sh.LLM(["a", "b"], completion, sleep=waits.append, delays=(1, 2, 3))([]) == "ok"
+    assert calls == ["a", "b", "a"] and waits == [1, 2]
+
+
+def test_llm_timeout_is_at_least_90s():
+    assert sh.llm_timeout_s({}) == sh.DEFAULT_LLM_TIMEOUT_S >= 90
+    assert sh.llm_timeout_s({"SELF_HEAL_LLM_TIMEOUT_S": "30"}) == 90
+    assert sh.llm_timeout_s({"SELF_HEAL_LLM_TIMEOUT_S": "240"}) == 240
+    assert sh.llm_timeout_s({"SELF_HEAL_LLM_TIMEOUT_S": "junk"}) == sh.DEFAULT_LLM_TIMEOUT_S
+    seen = {}
+    sh.call_llm([], "m", lambda **kw: seen.update(kw) or _reply("x"))
+    assert seen["timeout"] >= 90
