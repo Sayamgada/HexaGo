@@ -18,7 +18,7 @@ go:
     - internal/fleet
     - internal/matching
     # - internal/ledger
-    # - internal/safety
+    - internal/safety
     # - internal/pricing
 
 python:
@@ -27,3 +27,4 @@ python:
   root: services/agents-py
   packages:
     - src/agents_py/core
+    - src/agents_py/agents/safety

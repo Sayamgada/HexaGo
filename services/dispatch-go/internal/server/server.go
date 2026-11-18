@@ -20,6 +20,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
+	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
 	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
@@ -35,6 +36,7 @@ type RouterOptions struct {
 	Hub       *stream.Hub
 	Sim       *sim.Sim
 	Redis     *redisdiag.Monitor
+	Safety    *safety.Service
 }
 
 // WithRedisMonitor reports m's latest Redis check on /healthz;
@@ -202,7 +204,14 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 		}
 	})
 
-	// Reverse proxy routes /v1/agents/* to AGENTS_URL
+	// Reverse proxy routes /v1/agents/* (and the agent side of /v1/safety/*) to AGENTS_URL
+	if options.Safety == nil {
+		options.Safety = safety.New(safety.Options{
+			Config: safety.DefaultConfig(cfg.DemoMode), AgentsURL: cfg.AgentsURL, Stream: hub,
+			Events: svc.RecordAgentEvent, Positions: svc.Fleet(),
+		})
+	}
+	var agentsProxy http.Handler
 	target, err := url.Parse(cfg.AgentsURL)
 	if err != nil {
 		log.Printf("Warning: Failed to parse AGENTS_URL '%s': %v", cfg.AgentsURL, err)
@@ -227,7 +236,9 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 		r.HandleFunc("/v1/agents/*", func(w http.ResponseWriter, r *http.Request) {
 			proxy.ServeHTTP(w, r)
 		})
+		agentsProxy = proxy
 	}
+	mountSafety(r, options.Safety, agentsProxy)
 
 	return r
 }

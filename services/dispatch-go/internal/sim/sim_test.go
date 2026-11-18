@@ -19,6 +19,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
+	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
 	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
@@ -601,7 +602,12 @@ func offRouteKm(p, a, b geo.Point) float64 {
 }
 
 func TestSafetyIncidentDeviatesAndBrakesHard(t *testing.T) {
-	h := newHarness(t, 3)
+	var det *safety.Service
+	h := newHarness(t, 3, func(o *Options) {
+		det = safety.New(safety.Options{Config: safety.DefaultConfig(true), Events: o.Service.RecordAgentEvent,
+			Logger: log.New(io.Discard, "", 0)})
+		o.Safety = det
+	})
 	ctx := context.Background()
 	h.sim.Spawn(ctx)
 	view := h.requestRideFor(t, h.anyDriver(t), 6)
@@ -653,8 +659,12 @@ func TestSafetyIncidentDeviatesAndBrakesHard(t *testing.T) {
 		t.Fatal(`driver never published with status "incident"`)
 	}
 	evs := h.pub.agentEvents("safety_sentinel")
-	if len(evs) == 0 || !strings.Contains(evs[0].Decision, driverID) {
-		t.Fatalf("safety events %+v", evs)
+	if len(evs) != 1 || !strings.Contains(evs[0].Decision, driverID) || !strings.Contains(evs[0].Decision, "route deviation") {
+		t.Fatalf("want exactly one de-duplicated safety signal event, got %+v", evs)
+	}
+	sigs := det.Signals()
+	if len(sigs) != 1 || sigs[0].RideID != view.Ride.ID || sigs[0].RiderID != "rider-test" || len(sigs[0].PlannedRoute) < 2 {
+		t.Fatalf("signals %+v", sigs)
 	}
 	stored, _ := h.mem.RecentEvents(ctx, 50)
 	found := false

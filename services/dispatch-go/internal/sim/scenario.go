@@ -7,23 +7,21 @@ import (
 	"math"
 	"time"
 
-	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 )
 
 // Scenario parameters.
 const (
 	ScenarioDuration = 5 * time.Minute
-	ConcertBurst     = 40   // requests fired the moment the concert lets out
-	concertPerMin    = 45.0 // extra requests/min around the venue afterwards
-	RushBurst        = 25   // requests fired across the hotspots when rush hour starts
-	RainBurst        = 12   // requests fired when the rain starts
-	rainOfflineShare = 0.25 // share of idle drivers who log off in the rain
-	detourSideKm     = 0.45 // safety incident: swerve this far off the route...
-	detourAheadKm    = 0.15 // ...while moving this far forward
-	incidentSpeed    = 50.0 // km/h while deviating
-	incidentStop     = 25 * time.Second
-	deviationAlertKm = 0.3
+	ConcertBurst     = 40               // requests fired the moment the concert lets out
+	concertPerMin    = 45.0             // extra requests/min around the venue afterwards
+	RushBurst        = 25               // requests fired across the hotspots when rush hour starts
+	RainBurst        = 12               // requests fired when the rain starts
+	rainOfflineShare = 0.25             // share of idle drivers who log off in the rain
+	detourSideKm     = 0.45             // safety incident: swerve this far off the route...
+	detourAheadKm    = 0.15             // ...while moving this far forward
+	incidentSpeed    = 50.0             // km/h while deviating
+	incidentStop     = 60 * time.Second // standstill after the hard brake (unless the Safety Sentinel suspends the vehicle)
 )
 
 // Scenario errors.
@@ -92,14 +90,22 @@ func (s *Sim) addScenario(x scenarioState) {
 
 func (s *Sim) triggerIncident(ctx context.Context, v ScenarioView) (ScenarioView, error) {
 	s.mu.Lock()
+	// Prefer the ride a rider client is watching (the demo rider), then the
+	// trip with the most road left so the incident plays out before arrival.
 	var pick *simDriver
+	pickWatched := false
 	for _, d := range s.order {
-		if d.ride == nil || d.ride.status != RideOnTrip || d.route == nil || d.purpose != toDropoff || d.incident != nil {
+		if d.ride == nil || d.ride.status != RideOnTrip || d.route == nil || d.purpose != toDropoff || d.incident != nil || d.suspended {
 			continue
 		}
-		if pick == nil || d.route.total-d.dist > pick.route.total-pick.dist {
-			pick = d
+		watched := s.watched != nil && s.watched(d.ride.id)
+		switch {
+		case pick == nil, watched && !pickWatched:
+		case watched == pickWatched && d.route.total-d.dist > pick.route.total-pick.dist:
+		default:
+			continue
 		}
+		pick, pickWatched = d, watched
 	}
 	if pick == nil {
 		s.mu.Unlock()
@@ -113,7 +119,10 @@ func (s *Sim) triggerIncident(ctx context.Context, v ScenarioView) (ScenarioView
 	d.route, d.dist, d.purpose = newPath([]geo.Point{d.pos, target}), 0, 0
 	v.DriverID, v.RideID, v.Location = d.id, d.ride.id, d.pos
 	v.ActiveUntil = s.now().Add(time.Minute)
-	v.Detail = fmt.Sprintf("%s swerves %.0f m off route and brakes hard", d.id, detourSideKm*1000)
+	v.Detail = fmt.Sprintf("%s swerves %.0f m off route, brakes hard and stops", d.id, detourSideKm*1000)
+	if pickWatched {
+		v.Detail += " (the ride a rider is watching)"
+	}
 	s.mu.Unlock()
 	s.announce(ctx, "scenario safety_incident started: "+v.Detail, "Injected by the fleet simulator to exercise the Safety Sentinel.")
 	return v, nil
@@ -132,27 +141,13 @@ func (s *Sim) advanceIncident(d *simDriver, now time.Time, dt float64) []effect 
 		if d.dist < d.route.total {
 			return nil
 		}
-		// Hard brake: from top speed to standstill within this tick.
-		top := d.speed
+		// Hard brake: from top speed to standstill within this tick. The
+		// safety detector (fed every tick) sees the deviation and the brake.
 		d.speed = 0
 		d.route, d.dist = nil, 0
 		inc.phase = incStopped
 		inc.stopUntil = now.Add(incidentStop)
-		if inc.maxOffKm < deviationAlertKm {
-			return nil
-		}
-		id, rideID, pos, off := d.id, d.ride.id, d.pos, inc.maxOffKm
-		g := top / 3.6 / dt / 9.81
-		return []effect{func(ctx context.Context) {
-			s.svc.RecordAgentEvent(ctx, dispatch.AgentEventInput{
-				Agent: "safety_sentinel", EventType: "route_deviation", RideID: rideID, Kind: "incident", DriverID: id,
-				Input:    map[string]any{"driver_id": id, "lat": pos.Lat, "lng": pos.Lng, "deviation_m": math.Round(off * 1000), "speed_before_kmh": top},
-				Decision: fmt.Sprintf("flagged %s on ride %s: %.0f m off planned route, hard brake %.0f→0 km/h", id, rideID, off*1000, top),
-				Reasoning: fmt.Sprintf("Geofence rule (deterministic fallback): vehicle left the planned path by more than %.0f m "+
-					"and decelerated from %.0f km/h to a standstill within %.0f s (~%.1f g).", deviationAlertKm*1000, top, dt, g),
-				Confidence: 0.9, UsedFallback: true,
-			})
-		}}
+		return nil
 	case incStopped:
 		d.speed = 0
 		if now.Before(inc.stopUntil) {

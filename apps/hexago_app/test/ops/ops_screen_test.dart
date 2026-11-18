@@ -67,6 +67,21 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('the Safety tab shows the incident panel with live check-ins', (tester) async {
+    final source = FakeOpsSource(initialMetrics: sampleMetrics);
+    await _pumpScreen(tester, source);
+    expect(find.byKey(const ValueKey('incident-panel')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('tab-safety')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const ValueKey('incident-panel')), findsOneWidget);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    // Debug builds use the offline MockSafetyApi: one live check-in.
+    expect(find.byKey(const ValueKey('open-rider-phone-chk_demo')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('stacks vertically on a phone without overflow', (tester) async {
     final source = FakeOpsSource(initialMetrics: sampleMetrics);
     await _pumpScreen(tester, source, size: const Size(390, 844));

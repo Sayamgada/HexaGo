@@ -11,6 +11,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+from src.agents_py.agents.safety.decision import Confirmation, resolution_violations
 from src.agents_py.core.events import EventStore, get_event_store
 from src.agents_py.core.graph import agent
 from src.agents_py.core.llm import LLMClient, get_llm
@@ -57,6 +58,31 @@ async def heartbeat(store: Optional[EventStore] = None, llm: Optional[LLMClient]
         {"kind": "heartbeat", "decisions_last_hour": total, "fallback_rate": round(rate, 4),
          "llm_calls_today": calls},
     )
+
+
+async def review_resolution(incident: Dict[str, Any], *, requested_by: str, note: str, pending_checkins: int = 0,
+                            store: Optional[EventStore] = None) -> Confirmation:
+    """Guardrail: rule-check a request to close a safety incident (and unfreeze its driver).
+
+    Deterministic (no LLM). The Safety Sentinel can never close its own
+    incidents; a pending rider check-in or a missing resolution note blocks
+    the close. The verdict is written to agent_events either way.
+    """
+    start = time.perf_counter()
+    store = store or await get_event_store()
+    violations = resolution_violations(incident, requested_by, note, pending_checkins)
+    conf = Confirmation(incident_id=str(incident.get("id")), approved=not violations, violations=tuple(violations))
+    verdict = "confirmed" if conf.valid else "rejected"
+    await store.record_event(
+        AGENT, f"resolve request for incident {incident.get('id')} by {requested_by or '?'}",
+        f"incident {incident.get('id')} resolution {verdict}",
+        ("All guardrail checks passed: driver may return to service." if conf.valid
+         else "Guardrail checks failed: " + "; ".join(violations) + "."),
+        1.0, (time.perf_counter() - start) * 1000, False, None,
+        {"kind": "safety_resolution_review", "incident_id": incident.get("id"), "ride_id": incident.get("ride_id"),
+         "driver_id": incident.get("driver_id"), "approved": conf.valid, "violations": violations},
+    )
+    return conf
 
 
 async def heartbeat_loop(interval_s: float) -> None:

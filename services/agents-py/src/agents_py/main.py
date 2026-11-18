@@ -12,6 +12,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, His
 import litellm
 
 from src.agents_py.agents import ops_supervisor
+from src.agents_py.agents.safety.api import router as safety_router
 from src.agents_py.api import router as platform_router
 from src.agents_py.config import settings
 from src.agents_py.core import infra
@@ -65,6 +66,7 @@ app.add_middleware(
 )
 
 app.include_router(platform_router)
+app.include_router(safety_router)
 
 
 class IntentRequest(BaseModel):

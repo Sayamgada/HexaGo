@@ -17,6 +17,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
+	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
 	"github.com/hexago/hexago/services/dispatch-go/internal/server"
 	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
@@ -102,7 +103,23 @@ func main() {
 		log.Fatalf("dispatch broker: %v", err)
 	}
 
-	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon)}
+	// Safety: incident detection on every simulator tick; signals go to the
+	// Safety Sentinel (agents-py) over HTTP and to Redis channel "safety" when available.
+	safetyOpts := safety.Options{
+		Config: safety.DefaultConfig(cfg.DemoMode), AgentsURL: cfg.AgentsURL, Stream: hub,
+		Events: svc.RecordAgentEvent, Positions: svc.Fleet(), Telemetry: batcher,
+	}
+	if cfg.RedisURL != "" {
+		if rc, err := safety.NewRedis(ctx, cfg.RedisURL); err != nil {
+			log.Printf("WARN: safety signals will not be published on Redis: %v", err)
+		} else {
+			defer rc.Close()
+			safetyOpts.Redis = rc
+		}
+	}
+	safetySvc := safety.New(safetyOpts)
+
+	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon), server.WithSafety(safetySvc)}
 	simDone := make(chan struct{})
 	if cfg.DemoMode {
 		var router sim.Router = sim.StraightLine{}
@@ -116,10 +133,13 @@ func main() {
 		s, err := sim.New(sim.Options{
 			Service: svc, Publisher: hub, Router: router, Drivers: cfg.SimDrivers,
 			DemandPerMin: demand, AutoDemand: cfg.SimDemandPerMin == 0, Center: center, Telemetry: batcher, Registry: reg,
+			Safety:  safetySvc,
+			Watched: func(rideID string) bool { return hub.Subscribers(stream.RideTopic(rideID)) > 0 },
 		})
 		if err != nil {
 			log.Fatalf("simulator: %v", err)
 		}
+		safetySvc.SetVehicles(s)
 		if cfg.SimDrivers == 0 {
 			zero := 0
 			_, _ = s.Configure(ctx, sim.ConfigInput{Drivers: &zero})

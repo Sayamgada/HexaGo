@@ -125,5 +125,5 @@ def test_repo_targets_file_lists_core_packages():
     import yaml
     cfg = yaml.safe_load((cg.REPO_ROOT / "tools" / "coverage_targets.yml").read_text(encoding="utf-8"))
     assert cfg["threshold"] == 96.0
-    assert cfg["go"]["packages"] == ["internal/geo", "internal/fleet", "internal/matching"]
-    assert cfg["python"]["packages"] == ["src/agents_py/core"]
+    assert {"internal/geo", "internal/fleet", "internal/matching", "internal/safety"} <= set(cfg["go"]["packages"])
+    assert {"src/agents_py/core", "src/agents_py/agents/safety"} <= set(cfg["python"]["packages"])

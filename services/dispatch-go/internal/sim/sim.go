@@ -20,6 +20,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
+	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
 	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
@@ -57,6 +58,17 @@ type Options struct {
 	// time and match share so about DemoTargetBusy of the fleet is busy
 	// (Little's law). DemandPerMin is only the starting point.
 	AutoDemand bool
+	// Safety receives every on_trip vehicle each tick (nil = no detection).
+	Safety SafetyHook
+	// Watched reports whether a rider client is watching ride:<id>; the
+	// safety_incident scenario prefers such a ride (nil = none watched).
+	Watched func(rideID string) bool
+}
+
+// SafetyHook is the incident detector the simulator feeds.
+type SafetyHook interface {
+	ObserveTick(ctx context.Context, obs []safety.Observation)
+	RideEnded(rideID string)
 }
 
 type purpose int
@@ -69,6 +81,7 @@ const (
 
 type simRide struct {
 	id      string
+	rider   string
 	status  RideStatus
 	pickup  geo.Point
 	dropoff geo.Point
@@ -114,12 +127,15 @@ type simDriver struct {
 
 	offlineUntil time.Time // logged off (rain storm) until then
 	offline      bool      // currently offline; refreshed every Step
+	suspended    bool      // frozen by the Safety Sentinel until an Ops Supervisor-confirmed release
 }
 
 func (d *simDriver) busy() bool { return d.ride != nil }
 
 func (d *simDriver) wireStatus() string {
 	switch {
+	case d.suspended:
+		return "suspended"
 	case d.incident != nil:
 		return "incident"
 	case d.ride != nil:
@@ -158,6 +174,8 @@ type Sim struct {
 	hotspots  []hotspot
 	spikesOn  bool
 	tickHist  prometheus.Histogram
+	safety    SafetyHook
+	watched   func(string) bool
 
 	mu        sync.Mutex
 	rng       *rand.Rand
@@ -229,7 +247,7 @@ func New(o Options) (*Sim, error) {
 		spikesOn: !o.RandomSpikesOff,
 		rng:      rand.New(rand.NewPCG(o.Seed, o.Seed^0x9E3779B97F4A7C15)),
 		drivers:  map[string]*simDriver{}, target: o.Drivers, base: o.DemandPerMin,
-		auto: newAutoDemand(o.AutoDemand),
+		auto: newAutoDemand(o.AutoDemand), safety: o.Safety, watched: o.Watched,
 	}
 	for _, h := range baseHotspots {
 		s.hotspots = append(s.hotspots, hotspot{h.name, shift(h.at, o.Center), h.weight})
@@ -449,9 +467,14 @@ func (s *Sim) Step(ctx context.Context) {
 
 	busy := 0
 	drivers := make([]stream.Driver, 0, len(s.order))
+	var obs []safety.Observation
+	var ended []string
 	for _, d := range s.order {
-		wantOffline := d.ride == nil && now.Before(d.offlineUntil)
+		wantOffline := d.suspended || (d.ride == nil && now.Before(d.offlineUntil))
 		switch {
+		case d.suspended:
+			s.clearRoute(d)
+			d.speed = 0
 		case d.ride != nil && d.ride.fresh:
 			d.ride.fresh = false
 		case wantOffline:
@@ -494,7 +517,11 @@ func (s *Sim) Step(ctx context.Context) {
 		if d.ride != nil {
 			busy++
 			rideMsgs = append(rideMsgs, s.rideUpdate(d, wd))
+			if s.safety != nil && d.ride.status == RideOnTrip {
+				obs = append(obs, s.observation(d, now))
+			}
 			if d.ride.status.Terminal() {
+				ended = append(ended, d.ride.id)
 				s.rideFinished()
 				d.ride = nil
 			}
@@ -505,6 +532,14 @@ func (s *Sim) Step(ctx context.Context) {
 
 	for _, e := range effects {
 		e(ctx)
+	}
+	if s.safety != nil {
+		for _, id := range ended {
+			s.safety.RideEnded(id)
+		}
+		if len(obs) > 0 {
+			s.safety.ObserveTick(ctx, obs)
+		}
 	}
 	for _, u := range rideMsgs {
 		s.pub.Publish(stream.RideTopic(u.RideID), u)
@@ -566,7 +601,7 @@ func (s *Sim) intake(r store.Ride, now time.Time) (stream.RideUpdate, bool) {
 	if !ok || r.Status != store.RideMatched || d.busy() {
 		return stream.RideUpdate{}, false
 	}
-	d.ride = &simRide{id: r.ID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true}
+	d.ride = &simRide{id: r.ID, rider: r.RiderID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true}
 	s.rideStarted()
 	s.clearRoute(d)
 	d.dwell = time.Time{}

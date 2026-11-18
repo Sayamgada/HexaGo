@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../theme/hexago_theme.dart';
+import '../safety/widgets/incident_panel.dart';
 import 'models/ops_models.dart';
 import 'state/ops_providers.dart';
 import 'widgets/agent_feed.dart';
@@ -39,7 +40,7 @@ class OpsCommandCenterScreen extends ConsumerWidget {
                   child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: const [
                     Expanded(child: _MapPanel(overlayScenarios: true)),
                     SizedBox(width: 10),
-                    SizedBox(width: 400, child: _Feed()),
+                    SizedBox(width: 420, child: _SidePanel()),
                   ]),
                 ),
               ]),
@@ -58,6 +59,8 @@ class OpsCommandCenterScreen extends ConsumerWidget {
               SizedBox(height: (c.maxHeight * 0.55).clamp(320.0, 560.0), child: const _MapPanel(overlayScenarios: false)),
               const SizedBox(height: 10),
               const SizedBox(height: 520, child: _Feed()),
+              const SizedBox(height: 10),
+              const SizedBox(height: 520, child: IncidentPanel()),
             ],
           );
         }),
@@ -95,6 +98,29 @@ class _Feed extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final feed = ref.watch(agentFeedProvider);
     return AgentFeed(events: feed.events, totalSeen: feed.totalSeen);
+  }
+}
+
+/// Wide layout's right column: the agent feed and the safety incident panel.
+class _SidePanel extends StatelessWidget {
+  const _SidePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(children: [
+        const TabBar(
+          key: ValueKey('ops-side-tabs'),
+          tabs: [
+            Tab(key: ValueKey('tab-feed'), height: 36, text: 'Agent feed'),
+            Tab(key: ValueKey('tab-safety'), height: 36, text: 'Safety'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Expanded(child: TabBarView(physics: NeverScrollableScrollPhysics(), children: [_Feed(), IncidentPanel()])),
+      ]),
+    );
   }
 }
 

@@ -91,6 +91,7 @@ enum DriverStatus {
       case 'offline':
         return DriverStatus.offline;
       case 'incident':
+      case 'suspended':
       case 'sos':
       case 'alert':
         return DriverStatus.incident;
