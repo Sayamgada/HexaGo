@@ -131,6 +131,8 @@ type rideState struct {
 	harshAt   time.Time
 	trail     []TrailPoint
 	plan      []geo.Point
+	cum       []float64 // km along plan to each vertex
+	progress  float64   // km along plan of the last on-route position; <0 = not located yet
 	openedAt  time.Time // zero = no open signal
 	lastSeen  time.Time
 }
@@ -178,12 +180,12 @@ func (d *Detector) Observe(o Observation) *Signal {
 	defer d.mu.Unlock()
 	st := d.rides[o.RideID]
 	if st == nil {
-		st = &rideState{}
+		st = &rideState{progress: -1}
 		d.rides[o.RideID] = st
 	}
 	st.lastSeen = o.At
-	if len(o.Plan) >= 2 {
-		st.plan = o.Plan
+	if len(o.Plan) >= 2 && (len(st.plan) != len(o.Plan) || &st.plan[0] != &o.Plan[0]) {
+		st.plan, st.cum, st.progress = o.Plan, cumulative(o.Plan), -1 // new or re-planned route
 	}
 	pt := TrailPoint{Lat: o.Pos.Lat, Lng: o.Pos.Lng, SpeedKmh: o.SpeedKmh, At: o.At}
 
@@ -203,7 +205,7 @@ func (d *Detector) Observe(o Observation) *Signal {
 
 	// Route deviation from the planned polyline.
 	if len(o.Plan) >= 2 {
-		if off := DistToPolylineKm(o.Pos, o.Plan); off > d.cfg.DeviationKm {
+		if off := d.offRoute(st, o.Pos); off > d.cfg.DeviationKm {
 			if st.offSince.IsZero() {
 				st.offSince = o.At
 			}
@@ -245,6 +247,68 @@ func (d *Detector) Observe(o Observation) *Signal {
 	}
 	st.openedAt = o.At
 	return d.signal(o, st, trig)
+}
+
+// Window of the planned route a vehicle is matched against, around its progress.
+const (
+	windowBackKm  = 0.5
+	windowAheadKm = 1.5
+)
+
+// offRoute is the distance from p to the stretch of the planned route around
+// the vehicle's progress. Matching the whole polyline would miss a swerve
+// toward a part of a winding route the vehicle has already driven or has
+// not reached yet. Before the vehicle is located on the route, the whole
+// polyline is used.
+func (d *Detector) offRoute(st *rideState, p geo.Point) float64 {
+	lo, hi := math.Inf(-1), math.Inf(1)
+	if st.progress >= 0 {
+		lo, hi = st.progress-windowBackKm, st.progress+windowAheadKm
+	}
+	dist, along := nearestOnPlan(p, st.plan, st.cum, lo, hi)
+	if dist <= d.cfg.DeviationKm && along > st.progress {
+		st.progress = along
+	}
+	return dist
+}
+
+// cumulative returns the km along pts to each vertex.
+func cumulative(pts []geo.Point) []float64 {
+	c := make([]float64, len(pts))
+	for i := 1; i < len(pts); i++ {
+		c[i] = c[i-1] + geo.HaversineKm(pts[i-1], pts[i])
+	}
+	return c
+}
+
+// nearestOnPlan is the distance from p to the segments of pts overlapping
+// [lo, hi] km along the route, and how far along the route the nearest point is.
+func nearestOnPlan(p geo.Point, pts []geo.Point, cum []float64, lo, hi float64) (dist, along float64) {
+	kx := 111.320 * math.Cos(p.Lat*math.Pi/180)
+	const ky = 110.574
+	dist = math.Inf(1)
+	for i := 1; i < len(pts); i++ {
+		if cum[i] < lo || cum[i-1] > hi {
+			continue
+		}
+		a, b := pts[i-1], pts[i]
+		ax, ay := (a.Lng-p.Lng)*kx, (a.Lat-p.Lat)*ky
+		bx, by := (b.Lng-p.Lng)*kx, (b.Lat-p.Lat)*ky
+		dx, dy := bx-ax, by-ay
+		// Clip the segment to the window so a long straight that leaves it counts only in part.
+		tlo, thi, seg := 0.0, 1.0, cum[i]-cum[i-1]
+		if seg > 0 {
+			tlo, thi = math.Max(0, (lo-cum[i-1])/seg), math.Min(1, (hi-cum[i-1])/seg)
+		}
+		t := tlo
+		if l := dx*dx + dy*dy; l > 0 {
+			t = math.Max(tlo, math.Min(thi, -(ax*dx+ay*dy)/l))
+		}
+		if dd := math.Hypot(ax+t*dx, ay+t*dy); dd < dist {
+			dist, along = dd, cum[i-1]+t*(cum[i]-cum[i-1])
+		}
+	}
+	return dist, along
 }
 
 func recentG(st *rideState, now time.Time) float64 {

@@ -315,3 +315,37 @@ func TestGeometryHelpers(t *testing.T) {
 		t.Fatalf("downsample %d", len(ds))
 	}
 }
+
+// A swerve toward another part of a winding route is still a deviation: the
+// vehicle is matched against the stretch of route around its progress.
+func TestDeviationOnHairpinRouteUsesRouteWindow(t *testing.T) {
+	hairpin := []geo.Point{origin, east(2), at(east(2), 0.4), at(origin, 0.4)} // east, north, back west
+	if d := DistToPolylineKm(at(east(1), 0.4), hairpin); d > 0.01 {
+		t.Fatalf("the swerve target lies on the return leg (%.3f km): whole-route matching would miss it", d)
+	}
+	d := NewDetector(DefaultConfig(true))
+	o := func(pos geo.Point, sec float64) Observation {
+		x := obs("r", pos, 30, sec)
+		x.Plan, x.Dropoff = hairpin, at(origin, 0.4)
+		return x
+	}
+	for i := 0; i <= 10; i++ { // drive the first leg to 1 km
+		if s := d.Observe(o(east(float64(i)*0.1), float64(i))); s != nil {
+			t.Fatalf("on-route signal at %d", i)
+		}
+	}
+	var sig *Signal
+	for i := 11; i <= 25 && sig == nil; i++ { // swerve 400 m north and stay there
+		sig = d.Observe(o(at(east(1), 0.4), float64(i)))
+	}
+	if sig == nil || sig.Triggers[0].Type != TriggerDeviation || sig.Triggers[0].Value < 390 {
+		t.Fatalf("hairpin swerve not flagged: %+v", sig)
+	}
+	// A re-planned route resets the progress (vehicle located on the new plan).
+	d.RideEnded("r")
+	st := &rideState{progress: -1}
+	st.plan, st.cum = hairpin, cumulative(hairpin)
+	if off := d.offRoute(st, east(1.5)); off > 0.001 || math.Abs(st.progress-1.5) > 0.01 {
+		t.Fatalf("off %.3f progress %.3f", off, st.progress)
+	}
+}
