@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hexago_app/features/ops/state/ops_providers.dart';
 import 'package:hexago_app/features/rider/data/booking_api.dart';
 import 'package:hexago_app/features/rider/models/booking_models.dart';
 import 'package:hexago_app/features/rider/widgets/scheduled_legs.dart';
@@ -111,5 +114,23 @@ void main() {
     expect(res.scheduledIds.length, 2);
     expect((await api.scheduled('rider_priya')).length, 2);
     expect(await api.rideUpdates('r').isEmpty, isTrue);
+  });
+
+  testWidgets('live ride map follows ride:<id> updates', (tester) async {
+    final api = FakeBookingApi();
+    final leg = sched(1, 'dispatched', rideId: 'ride-1', rideStatus: 'matched');
+    await tester.pumpWidget(ProviderScope(
+      overrides: [showMapTilesProvider.overrideWithValue(false)],
+      child: MaterialApp(home: Scaffold(body: LiveRideMap(leg: leg, updates: api.rideUpdates('ride-1')))),
+    ));
+    await tester.pump();
+    expect(find.text('Live: ride ride-1'), findsOneWidget);
+    expect(find.byKey(const Key('live-driver')), findsNothing);
+    api.rideStreams['ride-1']!.add(const RideUpdate(rideId: 'ride-1', status: 'in_progress', driverLat: 12.95,
+        driverLng: 77.61, etaSec: 300));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Live: in progress · ETA 5 min'), findsOneWidget);
+    expect(find.byKey(const Key('live-driver')), findsOneWidget);
   });
 }

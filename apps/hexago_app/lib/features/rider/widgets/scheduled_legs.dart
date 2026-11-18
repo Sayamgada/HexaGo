@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import '../../../theme/hexago_theme.dart';
 import '../../ops/data/basemap.dart';
+import '../../ops/state/ops_providers.dart' show basemapProvider, showMapTilesProvider;
 import '../models/booking_models.dart';
 
 String legStatusLabel(ScheduledLeg l, DateTime now) {
@@ -75,16 +77,19 @@ class ScheduledLegsPanel extends StatelessWidget {
 }
 
 /// Live map for one dispatched leg: pickup, drop-off and the driver from `ride:<id>`.
-class LiveRideMap extends StatefulWidget {
+/// Uses the session's probed basemap (CARTO, or OSM when CARTO serves its
+/// "API key required" placeholder) like the Ops fleet map.
+class LiveRideMap extends ConsumerStatefulWidget {
   const LiveRideMap({super.key, required this.leg, required this.updates});
   final ScheduledLeg leg;
   final Stream<RideUpdate> updates;
 
   @override
-  State<LiveRideMap> createState() => _LiveRideMapState();
+  ConsumerState<LiveRideMap> createState() => _LiveRideMapState();
 }
 
-class _LiveRideMapState extends State<LiveRideMap> {
+class _LiveRideMapState extends ConsumerState<LiveRideMap> {
+  final MapController _map = MapController();
   StreamSubscription<RideUpdate>? _sub;
   RideUpdate? _last;
 
@@ -100,6 +105,13 @@ class _LiveRideMapState extends State<LiveRideMap> {
     super.dispose();
   }
 
+  void _fit(LatLng a, LatLng b) {
+    final bounds = fleetBounds([a, b]);
+    if (bounds != null) {
+      _map.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(36), maxZoom: 15));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = widget.leg;
@@ -107,7 +119,7 @@ class _LiveRideMapState extends State<LiveRideMap> {
     final drop = LatLng(l.dropoffLat, l.dropoffLng);
     final u = _last;
     final driver = u?.driverLat != null ? LatLng(u!.driverLat!, u.driverLng!) : null;
-    const basemap = Basemap.cartoDark;
+    final basemap = ref.watch(showMapTilesProvider) ? ref.watch(basemapProvider).value : null;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(
         u == null
@@ -122,18 +134,31 @@ class _LiveRideMapState extends State<LiveRideMap> {
         child: SizedBox(
           height: 260,
           child: FlutterMap(
+            mapController: _map,
             options: MapOptions(
-              initialCameraFit: CameraFit.bounds(bounds: LatLngBounds(pickup, drop), padding: const EdgeInsets.all(40)),
+              initialCenter: LatLng((pickup.latitude + drop.latitude) / 2, (pickup.longitude + drop.longitude) / 2),
+              initialZoom: 13,
+              backgroundColor: HexaColors.surface,
+              onMapReady: () => _fit(pickup, drop),
             ),
             children: [
-              TileLayer(urlTemplate: basemap.urlTemplate, subdomains: basemap.subdomains,
-                  userAgentPackageName: 'com.hexago.app'),
+              if (basemap != null)
+                TileLayer(
+                  key: ValueKey('rider-basemap-${basemap.name}'),
+                  urlTemplate: basemap.urlTemplate,
+                  fallbackUrl: basemap.fallbackUrl,
+                  subdomains: basemap.subdomains,
+                  tileBuilder: basemap.darkFilter ? darkModeTileBuilder : null,
+                  userAgentPackageName: 'com.hexago.app',
+                ),
               PolylineLayer(polylines: [Polyline(points: [pickup, drop], color: HexaColors.amber, strokeWidth: 3)]),
               MarkerLayer(markers: [
                 Marker(point: pickup, child: const Icon(Icons.trip_origin, color: HexaColors.good)),
                 Marker(point: drop, child: const Icon(Icons.flag, color: HexaColors.amber)),
-                if (driver != null) Marker(point: driver, child: const Icon(Icons.local_taxi, color: HexaColors.cyan)),
+                if (driver != null)
+                  Marker(point: driver, child: const Icon(Icons.local_taxi, key: Key('live-driver'), color: HexaColors.cyan)),
               ]),
+              if (basemap != null) SimpleAttributionWidget(source: Text(basemap.attribution)),
             ],
           ),
         ),
