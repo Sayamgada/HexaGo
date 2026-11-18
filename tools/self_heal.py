@@ -441,7 +441,8 @@ Rules:
    then exactly one ```diff fenced block holding a unified diff in git format: paths relative
    to the repo root with a/ and b/ prefixes, correct @@ hunk headers, and at least 3 lines of
    unchanged context copied exactly from the files shown.
-2. Fix the code under test. Change a test only if the test itself is clearly wrong.
+2. Fix the code under test. A patch that edits existing tests and no other code is
+   rejected: the failing tests are the spec. New test files are fine.
 3. Never modify anything under .github/.
 4. Never delete tests, skip them, or weaken their assertions.
 5. Change at most {MAX_FILES_PER_PATCH} files.
@@ -701,6 +702,10 @@ def validate_patch(diff: str, max_files: int = MAX_FILES_PER_PATCH) -> list[str]
         errors.append(f"patch removes tests: {', '.join(sorted(gone))}")
     if any(rx.search(ln) for ln in added for rx in SKIP_ADD_RES):
         errors.append("patch adds a test skip")
+    edited_tests = [f for f in info.files if is_test_file(f) and f not in info.created]
+    if edited_tests and all(is_test_file(f) for f in info.files):
+        errors.append("patch only edits existing tests ("
+                      + ", ".join(edited_tests) + "); fix the code under test instead")
     return errors
 
 
@@ -904,7 +909,10 @@ def wait_for_ci(gh: GitHub, branch: str, sha: str, timeout: int = 1_800,
     while waited <= timeout:
         runs = gh.get(f"repos/{gh.repo}/actions/workflows/{workflow}/runs?branch={branch}&per_page=10")
         for r in runs.get("workflow_runs", []):
-            if r.get("head_sha") == sha and r.get("status") == "completed":
+            # A pull_request run opened by the bot can sit in "action_required"
+            # (awaiting approval); ignore it and wait for the dispatched run.
+            if (r.get("head_sha") == sha and r.get("status") == "completed"
+                    and r.get("conclusion") != "action_required"):
                 return r.get("conclusion") or "unknown"
         sleep(interval)
         waited += interval

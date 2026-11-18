@@ -409,7 +409,8 @@ def test_validate_rejects_removing_test_functions(removed):
 def test_validate_allows_editing_a_test_body():
     diff = ("--- a/x_test.go\n+++ b/x_test.go\n@@ -1,2 +1,2 @@\n"
             "-func TestA(t *testing.T) { old }\n+func TestA(t *testing.T) { new }\n")
-    assert sh.validate_patch(diff) == []
+    code = "--- a/x.go\n+++ b/x.go\n@@ -1 +1 @@\n-a\n+b\n"
+    assert sh.validate_patch(diff + code) == []  # allowed alongside a code fix
 
 
 @pytest.mark.parametrize("added", ["\tt.Skip(\"flaky\")", "@pytest.mark.skip", "  }, skip: true);"])
@@ -598,6 +599,35 @@ def test_publish_leaves_pr_open_when_ci_fails(broken_repo):
     out = sh.publish(gh, event(), [DEMO_SUITE], sh.Failure(), _result(), "m", broken_repo, sleep=sleep)
     assert out["merge"].startswith("left open: CI failure")
     assert not [c for c in gh.calls if c[0] == "PUT"]
+
+
+def test_wait_for_ci_ignores_action_required_runs():
+    gh = FakeGitHub()
+    gh.runs = [{"head_sha": "sha", "status": "completed", "conclusion": "action_required"}]
+    calls = []
+
+    def sleep(_):
+        calls.append(1)
+        gh.runs.append({"head_sha": "sha", "status": "completed", "conclusion": "success"})
+    assert sh.wait_for_ci(gh, "b", "sha", timeout=60, interval=20, sleep=sleep) == "success"
+    assert calls
+
+
+def test_validate_patch_rejects_test_only_edits_but_allows_new_tests():
+    # Real gemini-3.8-flash patch (run 44272856982): passed by reordering the
+    # test's assertions instead of fixing the code under test.
+    weakened = ("--- a/services/agents-py/tests/test_llm.py\n"
+                "+++ b/services/agents-py/tests/test_llm.py\n@@ -1,2 +1,2 @@\n"
+                "-    assert a\n+    assert b\n")
+    errs = sh.validate_patch(weakened)
+    assert any("only edits existing tests" in e for e in errs)
+    with_code = weakened + ("--- a/services/agents-py/src/agents_py/core/kv.py\n"
+                            "+++ b/services/agents-py/src/agents_py/core/kv.py\n"
+                            "@@ -1 +1 @@\n-x = 1\n+x = 2\n")
+    assert sh.validate_patch(with_code) == []
+    new_test = ("--- /dev/null\n+++ b/services/dispatch-go/internal/geo/extra_test.go\n"
+                "@@ -0,0 +1 @@\n+package geo\n")
+    assert sh.validate_patch(new_test) == []
 
 
 def test_wait_for_ci_times_out():
