@@ -52,7 +52,7 @@ LOG_EXCERPT_CAP = 12_000
 OUTPUT_TAIL_CAP = 6_000
 DEFAULT_MODEL = "gemini/gemini-3.8-flash"
 # Tried in order after LLM_MODEL (override with LLM_FALLBACK_MODELS, comma-separated).
-DEFAULT_FALLBACK_MODELS = ("gemini/gemini-3.5-flash-lite", "gemini/gemini-3.8-flash")
+DEFAULT_FALLBACK_MODELS = ("gemini/gemini-3.8-flash", "gemini/gemini-3.5-flash-lite")
 AUTOFIX_PREFIX = "autofix/"
 AUTOFIX_MARKER = "[ai-autofix"  # in autofix PR titles, hence squash-merge commits
 LABEL_OK = "ai-autofix"
