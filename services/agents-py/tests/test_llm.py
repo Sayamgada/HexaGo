@@ -77,9 +77,9 @@ async def test_token_budget_exhaustion_falls_back(redis, clock):
     assert res.fallback_reason == "budget" and len(provider.calls) == 1
 
 
-async def test_budget_resets_at_ist_midnight(redis):
+async def test_budget_resets_at_ist_midnight(redis, clock):
     # 2026-11-17 18:29:00 UTC == 23:59 IST
-    clock = FakeClock(dt.datetime(2026, 11, 17, 18, 29, tzinfo=dt.timezone.utc).timestamp())
+    clock.set(dt.datetime(2026, 11, 17, 18, 29, tzinfo=dt.timezone.utc).timestamp())
     provider = ScriptedProvider([llm_response({"fare": 1}), llm_response({"fare": 2})])
     llm = make_llm(redis, clock, completion=provider, call_limit=1, min_interval_s=0)
     assert not (await llm.complete_json("p1", Quote, "a", fallback)).used_fallback
