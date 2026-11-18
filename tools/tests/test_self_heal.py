@@ -318,6 +318,19 @@ def test_parse_llm_response_skips_non_diff_fence():
     assert sh.parse_llm_response(reply)[0] == GOOD_DIFF
 
 
+def test_parse_llm_response_unclosed_fence_without_ab_prefixes():
+    # Real gemini-3.5-flash-lite reply (run 44264216157): no a/ b/ prefixes and
+    # no closing fence; it used to be dropped as "no unified diff".
+    hunk = ("--- calc.py\n+++ calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n"
+            "-    return a - b\n+    return a + b\n")
+    reply = "EXPLANATION:\nadd() subtracted.\n\n```diff\n" + hunk + "\n"
+    diff, why = sh.parse_llm_response(reply)
+    assert diff.startswith("--- calc.py\n+++ calc.py") and "+    return a + b" in diff
+    assert why == "add() subtracted."
+    assert sh.validate_patch(diff) == []
+    assert sh.parse_llm_response("Note:\n" + hunk)[0].startswith("--- calc.py")
+
+
 def test_call_llm_uses_completion_and_dict_fallback():
     class Msg:
         content = "hi"

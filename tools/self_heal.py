@@ -488,7 +488,8 @@ def build_messages(suites: list[Suite], failure: Failure, before_output: str,
 
 
 UNSUPPORTED_PARAM_RE = re.compile(r"UnsupportedParams|does not support param", re.I)
-DIFF_BLOCK_RE = re.compile(r"```(?:diff|patch)?[ \t]*\n(.*?)```", re.S)
+# The closing fence is optional: models sometimes stop right after the last hunk.
+DIFF_BLOCK_RE = re.compile(r"```(?:diff|patch)?[ \t]*\r?\n(.*?)(?:```|\Z)", re.S)
 
 
 def parse_llm_response(text: str) -> tuple[str, str]:
@@ -500,7 +501,7 @@ def parse_llm_response(text: str) -> tuple[str, str]:
             diff = body
             break
     if not diff:
-        m = re.search(r"^(diff --git |--- a/)", text, re.M)
+        m = re.search(r"^(diff --git |--- \S.*\r?\n\+\+\+ )", text, re.M)
         diff = text[m.start():] if m else ""
     m = re.search(r"EXPLANATION:\s*(.*?)(?:```|$)", text, re.S | re.I)
     explanation = (m.group(1) if m else DIFF_BLOCK_RE.sub("", text)).strip()
