@@ -853,3 +853,34 @@ def test_llm_gives_up_after_retries_then_tries_next_model():
     llm = sh.LLM(["busy", "spare"], completion, sleep=waits.append, delays=(1, 2))
     assert llm([]) == "from spare" and waits == [1, 2]
     assert llm.models == ["busy", "spare"]  # busy is not retired
+
+
+class RateLimitError(Exception):
+    pass
+
+
+def test_llm_drops_model_on_spent_quota_without_backoff(broken_repo):
+    waits, calls = [], []
+
+    def completion(model, **kw):
+        calls.append(model)
+        raise RateLimitError('{"code": 429, "message": "You exceeded your current quota, please check your plan"}')
+    llm = sh.LLM(["gemini/x"], completion, sleep=waits.append, delays=(15, 30))
+    with pytest.raises(RuntimeError, match="exceeded your current quota"):
+        llm([])
+    assert waits == [] and llm.models == [] and calls == ["gemini/x"]
+    # The healing loop stops instead of burning the remaining attempts.
+    res = sh.heal([DEMO_SUITE], sh.Failure(), broken_repo, ["calc.py"], llm)
+    assert not res.passed and res.attempts == [] and calls == ["gemini/x"]
+
+
+def test_plain_rate_limit_is_still_retried():
+    waits = []
+    replies = iter([RateLimitError("429 Too Many Requests, retry later"), None])
+
+    def completion(model, **kw):
+        r = next(replies)
+        if r:
+            raise r
+        return _reply("ok")
+    assert sh.LLM(["m"], completion, sleep=waits.append, delays=(5,))([]) == "ok" and waits == [5]

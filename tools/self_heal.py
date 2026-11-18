@@ -530,6 +530,8 @@ def call_llm(messages: list[dict], model: str,
 
 
 RETIRED_MODEL_RE = re.compile(r"404|NotFound|not found|no longer available|deprecated", re.I)
+# A spent daily/plan quota will not recover within the run: drop the model, don't back off.
+QUOTA_RE = re.compile(r"exceeded your current quota|quota exceeded|RESOURCE_EXHAUSTED.*quota", re.I | re.S)
 
 
 TRANSIENT_RE = re.compile(
@@ -564,7 +566,7 @@ class LLM:
                     kind = f"{type(e).__name__} {e}"
                     msg = f"{model}: {type(e).__name__}: {e}"[:600]
                     self.errors.append(msg)
-                    if RETIRED_MODEL_RE.search(kind) and not TRANSIENT_RE.search(kind):
+                    if QUOTA_RE.search(kind) or (RETIRED_MODEL_RE.search(kind) and not TRANSIENT_RE.search(kind)):
                         self.models.remove(model)
                     elif TRANSIENT_RE.search(kind) and wait is not None:
                         print(f"self-heal: {model} transient error, retrying in {wait}s", flush=True)
@@ -738,6 +740,8 @@ def heal(suites: list[Suite], failure: Failure, repo_root: Path, tracked: list[s
     history: list[Attempt] = []
     after, calls = before, 0
     for n in range(1, max_attempts + 1):
+        if getattr(llm, "models", True) == []:  # every model retired or out of quota
+            break
         calls += 1
         try:
             reply = llm(build_messages(suites, failure, before, context, history))
