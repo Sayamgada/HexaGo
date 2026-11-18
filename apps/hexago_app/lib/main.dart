@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
 import 'features/ops/ops_command_center_screen.dart';
+import 'features/rider/rider_screen.dart';
 import 'features/safety/safety_call_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/hexago_theme.dart';
@@ -17,6 +18,10 @@ GoRouter buildRouter({String initialLocation = '/'}) => GoRouter(
       routes: [
         GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
         GoRoute(path: '/ops', builder: (context, state) => const OpsCommandCenterScreen()),
+        GoRoute(
+          path: '/rider',
+          builder: (context, state) => RiderScreen(initialPersonaId: state.uri.queryParameters['persona']),
+        ),
         GoRoute(
           path: '/safety-call/:checkinId',
           builder: (context, state) => SafetyCallScreen(checkinId: state.pathParameters['checkinId'] ?? ''),

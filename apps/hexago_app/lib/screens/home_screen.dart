@@ -20,6 +20,10 @@ class _HomeScreenState extends State<HomeScreen> {
       context.push('/ops');
       return;
     }
+    if (role == 'Rider') {
+      context.push('/rider');
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Activated: $role via ${AppConfig.apiBaseUrl}'),

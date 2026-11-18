@@ -4,14 +4,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hexago_app/config/app_config.dart';
 import 'package:hexago_app/features/ops/state/ops_providers.dart';
+import 'package:hexago_app/features/rider/state/rider_providers.dart';
+import 'package:hexago_app/features/safety/state/safety_providers.dart';
+import 'package:hexago_app/features/safety/voice/voice_io.dart';
 import 'package:hexago_app/main.dart';
 
 import 'ops/fakes.dart';
+import 'rider/rider_fakes.dart';
 
 Widget _app() => ProviderScope(
       overrides: [
         opsSourceProvider.overrideWith((ref) => FakeOpsSource()),
         showMapTilesProvider.overrideWithValue(false),
+        bookingApiProvider.overrideWithValue(FakeBookingApi()),
+        voiceProvider.overrideWith((ref) => SilentVoiceIO()),
       ],
       child: const HexaGoApp(),
     );
@@ -44,7 +50,7 @@ void main() {
       expect(find.textContaining('Live agent audit events'), findsOneWidget);
     });
 
-    testWidgets('tapping on Rider role card updates selection', (WidgetTester tester) async {
+    testWidgets('tapping on Rider role card opens the rider persona picker', (WidgetTester tester) async {
       await tester.pumpWidget(_app());
 
       final riderCardFinder = find.byKey(const Key('role-card-Rider'));
@@ -53,9 +59,16 @@ void main() {
       await tester.tap(riderCardFinder);
       await tester.pumpAndSettle();
 
+      expect(find.text('HexaGo Rider'), findsOneWidget);
+      expect(find.byKey(const Key('persona-rider_priya')), findsOneWidget);
+    });
+
+    testWidgets('tapping on Driver role card updates selection', (WidgetTester tester) async {
+      await tester.pumpWidget(_app());
+      await tester.tap(find.byKey(const Key('role-card-Driver')));
+      await tester.pumpAndSettle();
       final badgeFinder = find.byKey(const Key('selected-role-badge'));
-      expect(badgeFinder, findsOneWidget);
-      expect(find.descendant(of: badgeFinder, matching: find.text('Selected Role: Rider')), findsOneWidget);
+      expect(find.descendant(of: badgeFinder, matching: find.text('Selected Role: Driver')), findsOneWidget);
     });
 
     testWidgets('tapping the Ops Command Center card opens the command center', (WidgetTester tester) async {

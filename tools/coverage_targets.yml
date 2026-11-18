@@ -3,7 +3,8 @@
 # Only the packages listed here are gated. To gate a new package (ledger,
 # safety, pricing, ...), add its directory below. A listed Python package
 # that does not exist yet is reported as "pending" instead of failing, so it
-# can be added here before its code lands.
+# can be added here before its code lands. A Python entry may also be a
+# single file.
 
 threshold: 96.0
 
@@ -20,6 +21,7 @@ go:
     - internal/ledger
     - internal/safety
     # - internal/pricing
+    - internal/scheduler
 
 python:
   # Cobertura XML written by: pytest --cov=src --cov-report=xml:coverage.xml
@@ -29,3 +31,7 @@ python:
     - src/agents_py/core
     - src/agents_py/agents/safety
     - src/agents_py/agents/settlement
+    # Booking Intent: rule-based fallback parser and itinerary timing; pricing quote function.
+    - src/agents_py/agents/booking/fallback_parser.py
+    - src/agents_py/agents/booking/itinerary.py
+    - src/agents_py/agents/pricing/quote.py

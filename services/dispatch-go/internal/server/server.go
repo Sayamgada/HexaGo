@@ -22,6 +22,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/ledger"
 	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
 	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
+	"github.com/hexago/hexago/services/dispatch-go/internal/scheduler"
 	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/stream"
 )
@@ -39,6 +40,7 @@ type RouterOptions struct {
 	Redis     *redisdiag.Monitor
 	Safety    *safety.Service
 	Ledger    *ledger.Ledger
+	Scheduler *scheduler.Scheduler
 }
 
 // WithRedisMonitor reports m's latest Redis check on /healthz;
@@ -242,6 +244,7 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	}
 	mountSafety(r, options.Safety, agentsProxy)
 	options.Ledger = mountLedger(r, options.Ledger, cfg, svc, options.Safety, hub)
+	options.Scheduler = mountScheduler(r, options.Scheduler, cfg, svc, agentsProxy)
 
 	return r
 }

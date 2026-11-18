@@ -12,6 +12,8 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, His
 import litellm
 
 from src.agents_py.agents import ops_supervisor
+from src.agents_py.agents.booking.api import router as booking_router
+from src.agents_py.agents.pricing.api import router as pricing_router
 from src.agents_py.agents.safety.api import router as safety_router
 from src.agents_py.agents.settlement import agent as settlement_agent
 from src.agents_py.agents.settlement.api import router as settlement_router
@@ -72,6 +74,8 @@ app.add_middleware(
 app.include_router(platform_router)
 app.include_router(safety_router)
 app.include_router(settlement_router)
+app.include_router(booking_router)
+app.include_router(pricing_router)
 
 
 class IntentRequest(BaseModel):

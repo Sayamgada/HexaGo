@@ -19,6 +19,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/ledger"
 	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
 	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
+	"github.com/hexago/hexago/services/dispatch-go/internal/scheduler"
 	"github.com/hexago/hexago/services/dispatch-go/internal/server"
 	"github.com/hexago/hexago/services/dispatch-go/internal/sim"
 	"github.com/hexago/hexago/services/dispatch-go/internal/store"
@@ -40,6 +41,7 @@ func main() {
 
 	// Persistence: Postgres (migrated on boot) when configured, else in memory.
 	var telemetry store.TelemetryStore = store.NewMemory()
+	var schedRepo scheduler.Repo
 	var ledgerStore ledger.Store = ledger.NewMemory()
 	if cfg.DatabaseURL != "" {
 		pg, err := store.OpenPostgres(ctx, cfg.DatabaseURL)
@@ -50,6 +52,7 @@ func main() {
 			opts.Store = pg
 			ledgerStore = ledger.NewPostgres(pg.Pool())
 			telemetry = store.NewPostgresTelemetry(pg.Pool())
+			schedRepo = scheduler.NewPGRepo(pg.Pool())
 			log.Println("Postgres connected; migrations applied")
 		}
 	} else {
@@ -134,6 +137,19 @@ func main() {
 
 	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon),
 		server.WithSafety(safetySvc), server.WithLedger(led)}
+
+	// Scheduler: legs of confirmed multi-leg booking plans, dispatched at pickup
+	// time (DEMO_MODE: 20 s after confirm, then 60 s after each leg completes).
+	sched := scheduler.New(scheduler.Options{
+		Rides: svc, Repo: schedRepo, Demo: cfg.DemoMode, Events: svc.RecordAgentEvent, Geo: svc.Geo(), Fleet: svc.Fleet(),
+	})
+	if n, err := sched.Restore(ctx); err != nil {
+		log.Printf("WARN scheduler: restore scheduled legs: %v", err)
+	} else if n > 0 {
+		log.Printf("scheduler: resumed %d scheduled legs", n)
+	}
+	go sched.Run(ctx)
+	routerOpts = append(routerOpts, server.WithScheduler(sched))
 	simDone := make(chan struct{})
 	if cfg.DemoMode {
 		var router sim.Router = sim.StraightLine{}

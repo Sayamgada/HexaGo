@@ -99,7 +99,7 @@ def go_coverage(profile_text: str, module: str, packages: list[str],
 
 def python_coverage(xml_text: str, packages: list[str],
                     threshold: float) -> list[PackageCoverage]:
-    """Per-package line coverage from a Cobertura XML (pytest-cov)."""
+    """Per-package (or per-file) line coverage from a Cobertura XML (pytest-cov)."""
     root = ET.fromstring(xml_text)
     sources = [(s.text or "").replace("\\", "/").rstrip("/")
                for s in root.iter("source")]
@@ -119,7 +119,9 @@ def python_coverage(xml_text: str, packages: list[str],
         pkg = pkg.strip("/")
         total = covered = 0
         for n, h, paths in files.values():
-            if any(p.startswith(pkg + "/") or f"/{pkg}/" in p for p in paths):
+            # A package directory, or a single file (e.g. ".../fallback_parser.py").
+            if any(p.startswith(pkg + "/") or f"/{pkg}/" in p or p == pkg or p.endswith("/" + pkg)
+                   for p in paths):
                 total += n
                 covered += h
         results.append(PackageCoverage("python", pkg, total, covered, threshold))

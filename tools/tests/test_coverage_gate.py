@@ -56,6 +56,15 @@ def test_python_coverage_matches_via_source_path():
     assert missing.status == "pending"
 
 
+def test_python_coverage_gates_single_files():
+    (llm,) = cg.python_coverage(COBERTURA, ["src/agents_py/core/llm.py"], 70)
+    assert (llm.statements, llm.covered, llm.status) == (4, 3, "pass")
+    (main,) = cg.python_coverage(COBERTURA, ["agents_py/main.py"], 96)
+    assert (main.statements, main.status) == (1, "fail")
+    (other,) = cg.python_coverage(COBERTURA, ["src/agents_py/core/ll.py"], 96)
+    assert other.status == "pending"  # no partial file-name matches
+
+
 def test_status_rounds_to_two_decimals():
     assert cg.PackageCoverage("go", "p", 100_000, 95_999, 96).status == "fail"
     assert cg.PackageCoverage("go", "p", 100, 96, 96).status == "pass"
@@ -127,3 +136,5 @@ def test_repo_targets_file_lists_core_packages():
     assert cfg["threshold"] == 96.0
     assert {"internal/geo", "internal/fleet", "internal/matching", "internal/safety"} <= set(cfg["go"]["packages"])
     assert {"src/agents_py/core", "src/agents_py/agents/safety"} <= set(cfg["python"]["packages"])
+    assert {"src/agents_py/agents/booking/fallback_parser.py", "src/agents_py/agents/booking/itinerary.py",
+            "src/agents_py/agents/pricing/quote.py"} <= set(cfg["python"]["packages"])
