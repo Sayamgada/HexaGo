@@ -132,6 +132,9 @@ type Service struct {
 	emergency   []EmergencyRecord
 	posted      int
 	postErrors  int
+
+	onSuspend []SuspensionHook // see OnSuspension (hooks.go)
+	onRelease []SuspensionHook
 }
 
 // New builds a Service.
@@ -321,6 +324,7 @@ func (s *Service) Suspend(ctx context.Context, driverID, incidentID, reason, act
 	s.mu.Lock()
 	s.suspensions[driverID] = sp
 	s.mu.Unlock()
+	s.fire(ctx, false, sp)
 	return sp, nil
 }
 
@@ -330,7 +334,7 @@ func (s *Service) Unsuspend(ctx context.Context, driverID, confirmedBy string) e
 		return ErrForbidden
 	}
 	s.mu.Lock()
-	_, ok := s.suspensions[driverID]
+	sp, ok := s.suspensions[driverID]
 	v := s.vehicles
 	s.mu.Unlock()
 	if !ok {
@@ -344,6 +348,7 @@ func (s *Service) Unsuspend(ctx context.Context, driverID, confirmedBy string) e
 	s.mu.Lock()
 	delete(s.suspensions, driverID)
 	s.mu.Unlock()
+	s.fire(ctx, true, sp)
 	return nil
 }
 

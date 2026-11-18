@@ -13,6 +13,7 @@ def _no_external_infra(monkeypatch):
     monkeypatch.setattr(infra.settings, "DATABASE_URL", "")
     monkeypatch.setattr(infra.settings, "GEMINI_API_KEY", None)
     monkeypatch.setattr(infra.settings, "HEARTBEAT_INTERVAL_S", 0)
+    monkeypatch.setattr(infra.settings, "SETTLEMENT_SCAN_INTERVAL_S", 0)
     _reset_singletons()
     yield
     _reset_singletons()

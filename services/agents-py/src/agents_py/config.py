@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # Ops Supervisor heartbeat period; 0 disables it.
     HEARTBEAT_INTERVAL_S: float = 300.0
+    # Settlement agent ledger audit period; 0 disables it.
+    SETTLEMENT_SCAN_INTERVAL_S: float = 60.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

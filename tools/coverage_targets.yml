@@ -17,7 +17,7 @@ go:
     - internal/geo
     - internal/fleet
     - internal/matching
-    # - internal/ledger
+    - internal/ledger
     - internal/safety
     # - internal/pricing
 
@@ -28,3 +28,4 @@ python:
   packages:
     - src/agents_py/core
     - src/agents_py/agents/safety
+    - src/agents_py/agents/settlement

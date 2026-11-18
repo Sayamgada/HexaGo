@@ -13,6 +13,8 @@ import litellm
 
 from src.agents_py.agents import ops_supervisor
 from src.agents_py.agents.safety.api import router as safety_router
+from src.agents_py.agents.settlement import agent as settlement_agent
+from src.agents_py.agents.settlement.api import router as settlement_router
 from src.agents_py.api import router as platform_router
 from src.agents_py.config import settings
 from src.agents_py.core import infra
@@ -39,6 +41,8 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(infra.redis_monitor().run())]
     if settings.HEARTBEAT_INTERVAL_S > 0:
         tasks.append(asyncio.create_task(ops_supervisor.heartbeat_loop(settings.HEARTBEAT_INTERVAL_S)))
+    if settings.SETTLEMENT_SCAN_INTERVAL_S > 0:
+        tasks.append(asyncio.create_task(settlement_agent.scan_loop(settings.SETTLEMENT_SCAN_INTERVAL_S)))
     try:
         yield
     finally:
@@ -67,6 +71,7 @@ app.add_middleware(
 
 app.include_router(platform_router)
 app.include_router(safety_router)
+app.include_router(settlement_router)
 
 
 class IntentRequest(BaseModel):

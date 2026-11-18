@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/hexago_theme.dart';
 import '../../../util/format.dart';
 import '../../../widgets/hexagon.dart';
+import '../../money/money_widgets.dart';
 import '../models/ops_models.dart';
 
 /// Visual identity per agent in the roster (PROJECT_CONTEXT.md §3).
@@ -52,7 +53,8 @@ enum FeedFilter {
   all('All', null, 'No agent decisions yet'),
   matches('Matches', FeedCategory.match, 'No matches yet'),
   unmatched('Unmatched', FeedCategory.unmatched, 'No unmatched requests'),
-  incidents('Incidents', FeedCategory.incident, 'No incidents yet');
+  incidents('Incidents', FeedCategory.incident, 'No incidents yet'),
+  money('Money', FeedCategory.money, 'No settlements yet');
 
   const FeedFilter(this.label, this.category, this.emptyText);
   final String label;
@@ -270,6 +272,17 @@ class _AgentEventTileState extends State<AgentEventTile> {
                                     style: const TextStyle(
                                         fontSize: 11, color: HexaColors.textMuted, fontFamily: 'monospace', height: 1.4),
                                   ),
+                                ),
+                              if (e.category == FeedCategory.money && e.rideId.isNotEmpty)
+                                TextButton.icon(
+                                  key: const ValueKey('fare-breakdown-button'),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () => showFareBreakdownSheet(context, e.rideId),
+                                  icon: const Icon(Icons.receipt_long, size: 14),
+                                  label: const Text('Fare breakdown', style: TextStyle(fontSize: 12)),
                                 ),
                             ]),
                           )

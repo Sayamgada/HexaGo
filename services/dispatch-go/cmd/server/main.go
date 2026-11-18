@@ -16,6 +16,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
+	"github.com/hexago/hexago/services/dispatch-go/internal/ledger"
 	"github.com/hexago/hexago/services/dispatch-go/internal/redisdiag"
 	"github.com/hexago/hexago/services/dispatch-go/internal/safety"
 	"github.com/hexago/hexago/services/dispatch-go/internal/server"
@@ -39,6 +40,7 @@ func main() {
 
 	// Persistence: Postgres (migrated on boot) when configured, else in memory.
 	var telemetry store.TelemetryStore = store.NewMemory()
+	var ledgerStore ledger.Store = ledger.NewMemory()
 	if cfg.DatabaseURL != "" {
 		pg, err := store.OpenPostgres(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -46,6 +48,7 @@ func main() {
 		} else {
 			defer pg.Close()
 			opts.Store = pg
+			ledgerStore = ledger.NewPostgres(pg.Pool())
 			telemetry = store.NewPostgresTelemetry(pg.Pool())
 			log.Println("Postgres connected; migrations applied")
 		}
@@ -119,7 +122,18 @@ func main() {
 	}
 	safetySvc := safety.New(safetyOpts)
 
-	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon), server.WithSafety(safetySvc)}
+	// Ledger: settles every completed ride; safety escalations hold payouts.
+	ledgerOpts := ledger.Options{Store: ledgerStore, Publisher: hub, TestMode: cfg.DemoMode}
+	if cfg.DemoMode {
+		ledgerOpts.Extras = ledger.SimExtras // deterministic promos and tips on simulated rides
+	}
+	led := ledger.New(ledgerOpts)
+	defer led.Close()
+	ledger.Attach(led, svc, safetySvc)
+	log.Printf("Ledger: %s store", led.StoreKind())
+
+	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon),
+		server.WithSafety(safetySvc), server.WithLedger(led)}
 	simDone := make(chan struct{})
 	if cfg.DemoMode {
 		var router sim.Router = sim.StraightLine{}

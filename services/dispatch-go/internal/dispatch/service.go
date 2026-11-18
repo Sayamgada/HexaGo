@@ -69,6 +69,7 @@ type Service struct {
 	publisher stream.Publisher
 	obsMu     sync.RWMutex
 	observer  func(store.Ride)
+	completed []func(context.Context, store.Ride) // see OnRideCompleted (hooks.go)
 }
 
 // New builds a Service.
@@ -406,8 +407,17 @@ func (s *Service) RecordAgentEvent(ctx context.Context, e AgentEventInput) {
 
 // AdvanceRide moves a ride along its trip lifecycle and keeps the driver's
 // status in step: matched → in_progress (driver en_route → on_trip) and
-// in_progress → completed (driver on_trip → idle).
+// in_progress → completed (driver on_trip → idle). A completed ride is handed
+// to every OnRideCompleted hook after the transition is persisted.
 func (s *Service) AdvanceRide(ctx context.Context, id string, to store.RideStatus) (store.Ride, error) {
+	r, err := s.advanceRideState(ctx, id, to)
+	if err == nil && r.Status == store.RideCompleted {
+		s.rideCompleted(ctx, r)
+	}
+	return r, err
+}
+
+func (s *Service) advanceRideState(ctx context.Context, id string, to store.RideStatus) (store.Ride, error) {
 	var from store.RideStatus
 	var dFrom, dTo fleet.Status
 	switch to {

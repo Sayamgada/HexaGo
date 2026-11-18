@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../theme/hexago_theme.dart';
+import '../money/money_widgets.dart';
 import '../safety/widgets/incident_panel.dart';
 import 'models/ops_models.dart';
 import 'state/ops_providers.dart';
@@ -35,6 +36,8 @@ class OpsCommandCenterScreen extends ConsumerWidget {
                 const _Banner(),
                 const SizedBox(height: 10),
                 const _Metrics(),
+                const SizedBox(height: 8),
+                const MoneyTile(),
                 const SizedBox(height: 10),
                 Expanded(
                   child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: const [
@@ -53,6 +56,8 @@ class OpsCommandCenterScreen extends ConsumerWidget {
               const _Banner(),
               const SizedBox(height: 10),
               const _Metrics(),
+              const SizedBox(height: 8),
+              const MoneyTile(),
               const SizedBox(height: 10),
               const _Scenarios(),
               const SizedBox(height: 10),

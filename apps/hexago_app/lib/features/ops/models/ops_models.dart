@@ -165,7 +165,7 @@ class DriverPosition {
 }
 
 /// Feed filter buckets.
-enum FeedCategory { match, unmatched, incident, other }
+enum FeedCategory { match, unmatched, incident, money, other }
 
 class AgentEvent {
   AgentEvent({
@@ -209,6 +209,14 @@ class AgentEvent {
         return FeedCategory.unmatched;
       case 'incident':
         return FeedCategory.incident;
+      case 'ledger_entry':
+      case 'payout_sent':
+      case 'payout_held':
+      case 'payout_released':
+      case 'refund':
+      case 'settlement_scan':
+      case 'settlement_anomaly':
+        return FeedCategory.money;
       case '':
         break;
       default:
