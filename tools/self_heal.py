@@ -608,6 +608,46 @@ class PatchInfo:
     created: list[str]
 
 
+DIFF_PATH_RE = re.compile(r"^(--- |\+\+\+ )(a/|b/)?(\S+)(.*)$")
+DIFF_GIT_RE = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
+
+
+def normalize_diff_paths(diff: str, tracked: list[str], roots: list[str]) -> str:
+    """Rewrite paths the LLM gave relative to a service (e.g. src/x.py) to repo paths.
+
+    A path that is already tracked is kept; otherwise it is resolved to the
+    tracked file it uniquely names (preferring the failing suites' roots), and
+    a new file is placed under the single suite root whose directory exists.
+    """
+    tracked_set = set(tracked)
+    dirs = {t.rsplit("/", 1)[0] for t in tracked if "/" in t}
+    cache: dict[str, str] = {}
+
+    def fix(path: str) -> str:
+        if path == "/dev/null" or path in tracked_set:
+            return path
+        if path not in cache:
+            hit = resolve_ref(path, tracked, roots)
+            if hit is None:
+                parent = path.rsplit("/", 1)[0] if "/" in path else ""
+                under = [f"{r.rstrip('/')}/{path}" for r in roots
+                         if not parent or f"{r.rstrip('/')}/{parent}" in dirs]
+                hit = under[0] if len(under) == 1 else path
+            cache[path] = hit
+        return cache[path]
+
+    out = []
+    for ln in diff.splitlines(keepends=True):
+        body = ln.rstrip("\r\n")
+        end = ln[len(body):]
+        if m := DIFF_GIT_RE.match(body):
+            body = f"diff --git a/{fix(m.group(1))} b/{fix(m.group(2))}"
+        elif (m := DIFF_PATH_RE.match(body)) and (m.group(2) or m.group(3) == "/dev/null"):
+            body = f"{m.group(1)}{m.group(2) or ''}{fix(m.group(3))}{m.group(4)}"
+        out.append(body + end)
+    return "".join(out)
+
+
 def patch_files(diff: str) -> PatchInfo:
     files, deleted, created = [], [], []
     old = None
@@ -749,12 +789,15 @@ def heal(suites: list[Suite], failure: Failure, repo_root: Path, tracked: list[s
             history.append(Attempt(n, "llm-error", output=f"LLM call failed: {e}"[:4_000]))
             continue
         diff, explanation = parse_llm_response(reply)
+        diff = normalize_diff_paths(diff, tracked, [s.root for s in suites])
         attempt = Attempt(n, "no-diff", explanation, diff, patch_files(diff).files)
         history.append(attempt)
         problems = validate_patch(diff)
         if problems:
             attempt.status = "no-diff" if not diff.strip() else "rejected"
             attempt.output = "Guardrails rejected the patch:\n- " + "\n- ".join(problems)
+            if not diff.strip():
+                attempt.output += "\n\nRaw reply (excerpt):\n" + (reply or "(empty)")[:1_500]
             continue
         reset_worktree(repo_root, run)
         applied, err = apply_patch(diff, repo_root, run)

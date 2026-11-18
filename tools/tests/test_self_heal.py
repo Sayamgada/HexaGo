@@ -884,3 +884,50 @@ def test_plain_rate_limit_is_still_retried():
             raise r
         return _reply("ok")
     assert sh.LLM(["m"], completion, sleep=waits.append, delays=(5,))([]) == "ok" and waits == [5]
+
+
+PY_TRACKED = ["services/agents-py/src/agents_py/core/kv.py", "services/agents-py/tests/test_llm.py",
+              "services/dispatch-go/internal/geo/hexgrid.go", "README.md"]
+
+
+def test_normalize_diff_paths_maps_service_relative_paths():
+    diff = ("diff --git a/src/agents_py/core/kv.py b/src/agents_py/core/kv.py\n"
+            "--- a/src/agents_py/core/kv.py\n+++ b/src/agents_py/core/kv.py\n@@ -1 +1 @@\n-a\n+b\n"
+            "--- a/internal/geo/hexgrid.go\t2026-01-01\n+++ b/internal/geo/hexgrid.go\n@@ -1 +1 @@\n-a\n+b\n"
+            "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n---- not a header\n+x\n")
+    out = sh.normalize_diff_paths(diff, PY_TRACKED, ["services/agents-py"])
+    assert ("diff --git a/services/agents-py/src/agents_py/core/kv.py "
+            "b/services/agents-py/src/agents_py/core/kv.py") in out
+    assert "+++ b/services/agents-py/src/agents_py/core/kv.py" in out
+    assert "--- a/services/dispatch-go/internal/geo/hexgrid.go\t2026-01-01" in out
+    assert "--- a/README.md" in out and "---- not a header" in out
+    assert sh.patch_files(out).files[0] == "services/agents-py/src/agents_py/core/kv.py"
+
+
+def test_normalize_diff_paths_places_new_files_under_suite_root():
+    diff = "--- /dev/null\n+++ b/tests/test_kv.py\n@@ -0,0 +1 @@\n+x\n"
+    out = sh.normalize_diff_paths(diff, PY_TRACKED, ["services/agents-py"])
+    assert "+++ b/services/agents-py/tests/test_kv.py" in out and "--- /dev/null" in out
+    # Ambiguous (two roots with that dir unknown) or unknown parent: left alone.
+    assert sh.normalize_diff_paths(diff, PY_TRACKED, ["services/agents-py", "services/other"]) == out
+    assert "+++ b/nowhere/x.py" in sh.normalize_diff_paths(
+        "--- /dev/null\n+++ b/nowhere/x.py\n", PY_TRACKED, ["services/agents-py"])
+
+
+def test_heal_applies_service_relative_patch(repo):
+    svc = repo / "services" / "svc"
+    svc.mkdir(parents=True)
+    (svc / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8", newline="")
+    (svc / "check.py").write_text(CHECK, encoding="utf-8", newline="")
+    commit_all(repo)
+    suite = sh.Suite("svc", "services/svc", (f'cd services/svc && "{sys.executable}" check.py',), ())
+    llm = scripted_llm(f"```diff\n{GOOD_DIFF}```")  # paths relative to the service: calc.py
+    res = sh.heal([suite], sh.Failure(), repo, ["services/svc/calc.py", "services/svc/check.py"], llm)
+    assert res.passed, res.attempts[0].output
+    assert res.attempts[0].files == ["services/svc/calc.py"]
+
+
+def test_no_diff_attempt_records_raw_reply(broken_repo):
+    llm = scripted_llm("I think the bug is in add()", "still no diff", "nope")
+    res = sh.heal([DEMO_SUITE], sh.Failure(), broken_repo, ["calc.py"], llm)
+    assert "Raw reply (excerpt):\nI think the bug is in add()" in res.attempts[0].output
