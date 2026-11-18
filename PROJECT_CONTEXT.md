@@ -63,6 +63,8 @@ flowchart TD
 | agents-py | https://hexago-65oz.onrender.com |
 | hexago-web (Flutter Web) | https://hexago-web.onrender.com |
 
+Redis (Render Key Value `hexago-redis`, Singapore) lives in a **different Render account** than the three services, so internal `redis://red-…` URLs cannot resolve. Both dispatch-go and agents-py use its **External URL** (`rediss://…@singapore-keyvalue.render.com:6379`, TLS) and the instance's Valkey inbound IP rules must allow them. `/healthz?redis=fresh` on either service runs a live connect / PING / pub-sub check and reports the masked URL, failing stage and a hint.
+
 The web app calls only the gateway; `/v1/agents/*` is proxied to agents-py. Both services allow CORS from `CORS_ALLOWED_ORIGINS` (default: the web app origin plus `http://localhost:*` and `http://127.0.0.1:*` for local dev).
 
 ---
