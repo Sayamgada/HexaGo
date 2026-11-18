@@ -83,9 +83,9 @@ async def test_budget_resets_at_ist_midnight(redis):
     provider = ScriptedProvider([llm_response({"fare": 1}), llm_response({"fare": 2})])
     llm = make_llm(redis, clock, completion=provider, call_limit=1, min_interval_s=0)
     assert not (await llm.complete_json("p1", Quote, "a", fallback)).used_fallback
-    assert (await llm.complete_json("p2", Quote, "a", fallback)).fallback_reason == "budget"
     clock.advance(120)  # 00:01 IST next day
-    assert not (await llm.complete_json("p3", Quote, "a", fallback)).used_fallback
+    assert not (await llm.complete_json("p2", Quote, "a", fallback)).used_fallback
+    assert (await llm.complete_json("p3", Quote, "a", fallback)).fallback_reason == "budget"
     assert (await llm.budget())["calls_today"] == 1
 
 
