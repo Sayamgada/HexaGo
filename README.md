@@ -219,7 +219,13 @@ When it's live, copy the **Internal Key Value URL** (`redis://red-…:6379`). Yo
 Environment variables:
 | Key | Value | Source |
 |---|---|---|
-| `LLM_MODEL` | `gemini/gemini-2.5-flash` | literal |
+| `LLM_MODEL` | `gemini/gemini-3.5-flash-lite` | literal |
+| `LLM_FALLBACK_MODELS` | `gemini/gemini-3.1-flash-lite,gemini/gemini-3-flash-preview` | literal |
+| `EMBEDDING_MODEL` | `gemini/gemini-embedding-001` | literal |
+| `LLM_TIMEOUT_S` | `4` | literal |
+| `DISPATCH_URL` | `https://dispatch-go.onrender.com` | literal |
+| `HEARTBEAT_INTERVAL_S` | optional; `300` (`0` disables) | literal |
+| other `LLM_*` guardrails | optional; defaults in `.env.example` | literal |
 | `GEMINI_API_KEY` | your Gemini API key | your secret |
 | `DATABASE_URL` | Internal Database URL | copy from **hexago-postgres** |
 | `REDIS_URL` | Internal Key Value URL | copy from **hexago-redis** |

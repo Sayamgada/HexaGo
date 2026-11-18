@@ -8,9 +8,18 @@ provider call it checks, in order:
 3. the per-agent minimum interval ``LLM_MIN_INTERVAL_S``      -> "rate"
 4. the daily call and token budgets (reset at midnight IST)   -> "budget"
 
-A provider timeout (``LLM_TIMEOUT_S``) or error is retried once, then becomes
-"timeout" / "error". Whenever anything blocks or fails, the caller's
-deterministic fallback runs and the result is marked ``used_fallback=True``.
+Provider calls walk the model chain ``LLM_MODEL`` + ``LLM_FALLBACK_MODELS``
+(comma-separated): a model that answers 404 is retired for the life of the
+process; a 429/503 (or other 5xx) backs off ``LLM_BACKOFF_S`` (doubling) and
+moves to the next model; a timeout (``LLM_TIMEOUT_S``), other error or malformed
+output moves to the next model. A single-model chain is retried once. When the
+chain is exhausted the result is "timeout" / "error". Whenever anything blocks
+or fails, the caller's deterministic fallback runs and the result is marked
+``used_fallback=True``.
+
+Every time read for budgets, the min interval and the cache TTL goes through
+the injected ``clock`` (shared with the GuardStore); backoff waits go through
+the injected ``sleep``. ``time.perf_counter`` is used only to report latency.
 
 Agents call this only on meaningful events (a booking request, an incident, an
 unusual surge), never on every tick; the min interval enforces that.
@@ -25,7 +34,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, Union
 
 import litellm
 from prometheus_client import Counter
@@ -43,6 +52,37 @@ LLM_CALLS = Counter("hexago_llm_calls_total", "LLM requests by outcome", ["agent
 LLM_TOKENS = Counter("hexago_llm_tokens_total", "LLM tokens consumed", ["agent"])
 
 FALLBACK_REASONS = ("disabled", "budget", "rate", "timeout", "error")
+
+_RETIRED_RE = re.compile(r"\b404\b|NotFound|not found|no longer (?:available|supported)", re.I)
+_TRANSIENT_RE = re.compile(r"\b(?:429|500|502|503|504)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|overloaded|RateLimit",
+                           re.I)
+MAX_BACKOFF_S = 8.0
+
+
+def classify_error(err: BaseException) -> str:
+    """'retired' (404: drop the model), 'transient' (429/5xx: back off) or 'error'."""
+    status = getattr(err, "status_code", None)
+    if status == 404:
+        return "retired"
+    if status in (429, 500, 502, 503, 504):
+        return "transient"
+    text = f"{type(err).__name__} {err}"
+    if _RETIRED_RE.search(text):
+        return "retired"
+    if _TRANSIENT_RE.search(text):
+        return "transient"
+    return "error"
+
+
+def parse_models(raw: Union[str, Sequence[str], None]) -> List[str]:
+    """Comma-separated (or list) model names, trimmed, de-duplicated, in order."""
+    items = raw.split(",") if isinstance(raw, str) else list(raw or [])
+    out: List[str] = []
+    for item in items:
+        name = item.strip()
+        if name and name not in out:
+            out.append(name)
+    return out
 
 
 @dataclass
@@ -87,32 +127,41 @@ class LLMClient:
         self,
         *,
         store: GuardStore,
-        model: str = "gemini/gemini-2.0-flash",
+        model: str = "gemini/gemini-3.5-flash-lite",
+        fallback_models: Union[str, Sequence[str], None] = None,
         api_key: Optional[str] = None,
         enabled: bool = True,
-        timeout_s: float = 3.0,
+        timeout_s: float = 4.0,
+        backoff_s: float = 0.5,
         call_limit: int = 300,
         token_limit: int = 200_000,
         min_interval_s: float = 20.0,
         cache_ttl_s: int = 600,
-        embedding_model: str = "gemini/text-embedding-004",
+        embedding_model: str = "gemini/gemini-embedding-001",
+        embedding_dimensions: Optional[int] = 768,
         completion: Optional[Callable[..., Awaitable[Any]]] = None,
         embedding: Optional[Callable[..., Awaitable[Any]]] = None,
         clock: Callable[[], float] = time.time,
+        sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
     ):
         self.store = store
         self.model = model
+        self.fallback_models = [m for m in parse_models(fallback_models) if m != model]
+        self.retired: Set[str] = set()
         self.api_key = api_key
         self.enabled = enabled
         self.timeout_s = timeout_s
+        self.backoff_s = backoff_s
         self.call_limit = call_limit
         self.token_limit = token_limit
         self.min_interval_s = min_interval_s
         self.cache_ttl_s = cache_ttl_s
         self.embedding_model = embedding_model
+        self.embedding_dimensions = embedding_dimensions
         self._completion = completion
         self._embedding = embedding
         self.clock = clock
+        self.sleep = sleep
 
     # ---- keys ----
     def _day_key(self, name: str) -> str:
@@ -127,6 +176,18 @@ class LLMClient:
         if not self.enabled:
             return False
         return not (model.startswith("gemini/") and not self.api_key)
+
+    def chain(self) -> List[str]:
+        """Models to try, in order: usable and not retired."""
+        return [m for m in [self.model, *self.fallback_models]
+                if m not in self.retired and self._usable(m)]
+
+    def _plan(self) -> List[str]:
+        chain = self.chain()
+        return chain * 2 if len(chain) == 1 else chain  # a lone model is retried once
+
+    async def _backoff(self, n: int) -> None:
+        await self.sleep(min(MAX_BACKOFF_S, self.backoff_s * (2 ** n)))
 
     async def _check_rate(self, agent: str) -> None:
         if not await self.store.set_nx(f"llm:last:{agent}", self.min_interval_s):
@@ -163,8 +224,11 @@ class LLMClient:
         attempts = 0
         tokens = 0
         try:
-            if not self._usable(self.model):
-                raise _Blocked("disabled")
+            plan = self._plan()
+            if not plan:
+                # Nothing usable is configured -> disabled; everything retired (404) -> error.
+                configured = any(self._usable(m) for m in [self.model, *self.fallback_models])
+                raise _Blocked("error" if configured else "disabled")
             cached = await self.store.get_json(key)
             if cached is not None:
                 try:
@@ -178,17 +242,30 @@ class LLMClient:
                                      latency_ms=_ms(start))
             await self._check_rate(agent_name)
             last = "error"
-            for _ in range(2):  # one retry
+            transient = 0
+            for i, model in enumerate(plan):
+                if model in self.retired:
+                    continue
                 await self._reserve_call()
                 attempts += 1
                 try:
-                    resp = await asyncio.wait_for(self._call_completion(full_prompt), self.timeout_s)
+                    resp = await asyncio.wait_for(self._call_completion(full_prompt, model), self.timeout_s)
                 except asyncio.TimeoutError:
                     last = "timeout"
                     continue
-                except Exception as err:  # noqa: BLE001 - provider errors are retried, then fall back
-                    log.warning("llm %s: provider error: %s", agent_name, err)
+                except Exception as err:  # noqa: BLE001 - provider errors move on, then fall back
                     last = "error"
+                    kind = classify_error(err)
+                    if kind == "retired":
+                        self.retired.add(model)
+                        log.warning("llm %s: model %s retired (404), dropping it: %s", agent_name, model, err)
+                    elif kind == "transient":
+                        log.warning("llm %s: model %s busy, backing off: %s", agent_name, model, err)
+                        if i + 1 < len(plan):
+                            await self._backoff(transient)
+                            transient += 1
+                    else:
+                        log.warning("llm %s: model %s provider error: %s", agent_name, model, err)
                     continue
                 used = _tokens(resp)
                 tokens += used
@@ -196,15 +273,15 @@ class LLMClient:
                 try:
                     data = schema.model_validate(_parse_json(resp.choices[0].message.content)).model_dump()
                 except Exception as err:  # noqa: BLE001 - malformed output counts as an error
-                    log.warning("llm %s: malformed output: %s", agent_name, err)
+                    log.warning("llm %s: model %s malformed output: %s", agent_name, model, err)
                     last = "error"
                     continue
                 await self.store.set_json(key, data, self.cache_ttl_s)
                 latency = _ms(start)
                 LLM_CALLS.labels(agent_name, "ok").inc()
                 log.info("llm %s model=%s latency_ms=%.1f tokens=%d attempts=%d",
-                         agent_name, self.model, latency, tokens, attempts)
-                return LLMResult(data, False, latency_ms=latency, tokens=tokens, model=self.model,
+                         agent_name, model, latency, tokens, attempts)
+                return LLMResult(data, False, latency_ms=latency, tokens=tokens, model=model,
                                  attempts=attempts)
             raise _Blocked(last)
         except _Blocked as blocked:
@@ -254,6 +331,8 @@ class LLMClient:
             "timezone": "Asia/Kolkata",
             "enabled": self.enabled,
             "model": self.model,
+            "fallback_models": list(self.fallback_models),
+            "retired_models": sorted(self.retired),
             "calls_today": await self.store.get_int(self._day_key("calls")),
             "tokens_today": await self.store.get_int(self._day_key("tokens")),
             "cache_hits": await self.store.get_int(self._day_key("cache_hits")),
@@ -262,6 +341,7 @@ class LLMClient:
                 "daily_tokens": self.token_limit,
                 "min_interval_s": self.min_interval_s,
                 "timeout_s": self.timeout_s,
+                "backoff_s": self.backoff_s,
             },
             "store": self.store.backend,
         }
@@ -270,20 +350,22 @@ class LLMClient:
     def _key_kwargs(self, model: str) -> Dict[str, Any]:
         return {"api_key": self.api_key} if self.api_key and model.startswith("gemini/") else {}
 
-    async def _call_completion(self, prompt: str) -> Any:
+    async def _call_completion(self, prompt: str, model: Optional[str] = None) -> Any:
         fn = self._completion or litellm.acompletion
+        model = model or self.model
         return await fn(
-            model=self.model,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             timeout=self.timeout_s,
-            **self._key_kwargs(self.model),
+            **self._key_kwargs(model),
         )
 
     async def _call_embedding(self, text: str) -> Any:
         fn = self._embedding or litellm.aembedding
+        extra: Dict[str, Any] = {"dimensions": self.embedding_dimensions} if self.embedding_dimensions else {}
         return await fn(model=self.embedding_model, input=[text], timeout=self.timeout_s,
-                        **self._key_kwargs(self.embedding_model))
+                        **extra, **self._key_kwargs(self.embedding_model))
 
 
 def _ms(start: float) -> float:
@@ -309,9 +391,11 @@ async def get_llm() -> LLMClient:
         _client = LLMClient(
             store=GuardStore(await infra.get_redis()),
             model=settings.LLM_MODEL,
+            fallback_models=settings.LLM_FALLBACK_MODELS,
             api_key=settings.GEMINI_API_KEY,
             enabled=settings.LLM_ENABLED,
             timeout_s=settings.LLM_TIMEOUT_S,
+            backoff_s=settings.LLM_BACKOFF_S,
             call_limit=settings.LLM_DAILY_CALL_LIMIT,
             token_limit=settings.LLM_DAILY_TOKEN_LIMIT,
             min_interval_s=settings.LLM_MIN_INTERVAL_S,

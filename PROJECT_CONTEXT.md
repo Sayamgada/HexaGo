@@ -104,9 +104,9 @@ HexaGo operates with eleven specialized autonomous agents coordinating via LangG
 3. **Configuration & Secrets**:
    - Zero hardcoded secrets or environment targets. All runtime configuration is driven strictly through environment variables.
    - Standardized keys: `LLM_MODEL`, `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `AGENTS_URL`, `DISPATCH_URL`, `DEMO_MODE`, `CITY_CENTER_LAT`, `CITY_CENTER_LNG`, `CORS_ALLOWED_ORIGINS`.
-   - LLM guardrail keys (agents-py): `LLM_ENABLED` (default `true`), `LLM_TIMEOUT_S` (`3`), `LLM_DAILY_CALL_LIMIT` (`300`), `LLM_DAILY_TOKEN_LIMIT` (`200000`), `LLM_MIN_INTERVAL_S` (`20`), `LLM_CACHE_TTL_S` (`600`), `EMBEDDING_MODEL` (`gemini/text-embedding-004`), `HEARTBEAT_INTERVAL_S` (`300`, `0` disables).
+   - LLM guardrail keys (agents-py): `LLM_ENABLED` (default `true`), `LLM_TIMEOUT_S` (`4`), `LLM_BACKOFF_S` (`0.5`), `LLM_DAILY_CALL_LIMIT` (`300`), `LLM_DAILY_TOKEN_LIMIT` (`200000`), `LLM_MIN_INTERVAL_S` (`20`), `LLM_CACHE_TTL_S` (`600`), `EMBEDDING_MODEL` (`gemini/gemini-embedding-001`, requested at 768 dims), `HEARTBEAT_INTERVAL_S` (`300`, `0` disables).
 4. **Pluggable LLM Backends**:
-   - All agent inference routes through LiteLLM configured by `LLM_MODEL` (default `gemini/gemini-2.0-flash`; e.g. `gemini/gemini-2.5-flash`, `openai/gpt-4o-mini`, `anthropic/claude-3-5-haiku`).
+   - All agent inference routes through LiteLLM configured by `LLM_MODEL` (default `gemini/gemini-3.5-flash-lite`; e.g. `openai/gpt-4o-mini`, `anthropic/claude-3-5-haiku`), then `LLM_FALLBACK_MODELS` (comma-separated, default `gemini/gemini-3.1-flash-lite,gemini/gemini-3-flash-preview`). A model that answers 404 is dropped for the life of the process; a 429/503 backs off (`LLM_BACKOFF_S`, doubling, max 8 s) and moves to the next model. gemini-2.x and `text-embedding-004` answer 404 as of 2026-11-18.
 5. **Deterministic Non-LLM Fallbacks**:
    - Every single agent must implement a reliable, deterministic non-LLM fallback algorithm. If the LLM provider times out, throttles, or returns malformed structured output, the platform continues uninterrupted without human intervention.
 6. **Immutable Audit Trail (`agent_events`)**:
@@ -114,7 +114,7 @@ HexaGo operates with eleven specialized autonomous agents coordinating via LangG
 7. **LLM Cost Guardrails (mandatory)**:
    - Agents never call a provider directly: every completion goes through `core.llm.complete_json(prompt, schema, agent_name, fallback)` and every embedding through `LLMClient.embed`.
    - Checks, in order: `LLM_ENABLED` (and a `GEMINI_API_KEY` for `gemini/*` models) → response cache (sha256 of model + prompt in Redis, 10 min TTL) → per-agent minimum interval `LLM_MIN_INTERVAL_S` → daily call and token budgets, kept in Redis and reset at midnight IST (in-memory fallback if Redis is down).
-   - Provider calls time out after `LLM_TIMEOUT_S` and are retried once. Whenever a guardrail blocks, the timeout hits, the provider errors, or the output fails schema validation, the caller's deterministic fallback runs and the result is marked `used_fallback=true` with `fallback_reason` one of `disabled | budget | rate | timeout | error`.
+   - Provider calls time out after `LLM_TIMEOUT_S`; each failed attempt moves to the next model in the chain (a single-model chain is retried once). All guardrail time reads (day keys, min interval, cache TTL) go through the injected clock; Redis only ever gets relative TTLs. Whenever a guardrail blocks, the timeout hits, the provider errors, or the output fails schema validation, the caller's deterministic fallback runs and the result is marked `used_fallback=true` with `fallback_reason` one of `disabled | budget | rate | timeout | error`.
    - LLM calls are event-driven only: agents call the LLM on meaningful events (booking request, incident, unusual surge), never on every tick.
    - `GET /v1/agents/llm/budget` reports `calls_today`, `tokens_today`, `limits`, `enabled`, `cache_hits`.
 8. **Default Demo City**:

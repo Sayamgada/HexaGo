@@ -21,11 +21,11 @@ services:
         fromDatabase:
           name: hexago-postgres
           property: connectionString
+      # The live Key Value lives in another Render account, so its internal URL cannot
+      # resolve: set the External URL (rediss://...@singapore-keyvalue.render.com:6379)
+      # and allow this service in its inbound IP rules. Verify: /healthz?redis=fresh
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: hexago-redis
-          property: connectionString
+        sync: false
       - key: DEMO_MODE
         value: "true"
       - key: CITY_CENTER_LAT
@@ -44,19 +44,42 @@ services:
     envVars:
       - key: PORT
         value: "8000"
+      # gemini-2.x and text-embedding-004 answer 404 (retired); checked live 2026-11-18.
       - key: LLM_MODEL
-        value: gemini/gemini-2.5-flash
+        value: gemini/gemini-3.5-flash-lite
+      - key: LLM_FALLBACK_MODELS
+        value: gemini/gemini-3.1-flash-lite,gemini/gemini-3-flash-preview
+      - key: EMBEDDING_MODEL
+        value: gemini/gemini-embedding-001
       - key: GEMINI_API_KEY
         sync: false
+      # LLM cost guardrails (see PROJECT_CONTEXT.md)
+      - key: LLM_ENABLED
+        value: "true"
+      - key: LLM_TIMEOUT_S
+        value: "4"
+      - key: LLM_BACKOFF_S
+        value: "0.5"
+      - key: LLM_DAILY_CALL_LIMIT
+        value: "300"
+      - key: LLM_DAILY_TOKEN_LIMIT
+        value: "200000"
+      - key: LLM_MIN_INTERVAL_S
+        value: "20"
+      - key: LLM_CACHE_TTL_S
+        value: "600"
+      - key: HEARTBEAT_INTERVAL_S
+        value: "300"
+      # agents-py -> dispatch-go (public gateway URL, no trailing slash)
+      - key: DISPATCH_URL
+        value: https://dispatch-go.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: hexago-postgres
           property: connectionString
+      # Same External rediss:// URL as dispatch-go (see the note there). Verify: /healthz?redis=fresh
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: hexago-redis
-          property: connectionString
+        sync: false
       - key: DEMO_MODE
         value: "true"
       - key: CITY_CENTER_LAT

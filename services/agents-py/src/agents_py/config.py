@@ -7,7 +7,10 @@ from src.agents_py.cors import DEFAULT_ORIGINS
 
 class Settings(BaseSettings):
     PORT: int = 8000
-    LLM_MODEL: str = "gemini/gemini-2.0-flash"
+    # gemini-2.x and text-embedding-004 answer 404 (retired) as of 2026-11-18.
+    LLM_MODEL: str = "gemini/gemini-3.5-flash-lite"
+    # Tried in order after LLM_MODEL: a 404 drops a model, a 429/503 backs off and moves on.
+    LLM_FALLBACK_MODELS: str = "gemini/gemini-3.1-flash-lite,gemini/gemini-3-flash-preview"
     GEMINI_API_KEY: Optional[str] = None
     # Empty DATABASE_URL / REDIS_URL mean "run in memory" (tests, keyless local runs).
     DATABASE_URL: str = ""
@@ -20,12 +23,13 @@ class Settings(BaseSettings):
 
     # LLM cost guardrails (see PROJECT_CONTEXT.md "LLM cost guardrails").
     LLM_ENABLED: bool = True
-    LLM_TIMEOUT_S: float = 3.0
+    LLM_TIMEOUT_S: float = 4.0
+    LLM_BACKOFF_S: float = 0.5
     LLM_DAILY_CALL_LIMIT: int = 300
     LLM_DAILY_TOKEN_LIMIT: int = 200_000
     LLM_MIN_INTERVAL_S: float = 20.0
     LLM_CACHE_TTL_S: int = 600
-    EMBEDDING_MODEL: str = "gemini/text-embedding-004"
+    EMBEDDING_MODEL: str = "gemini/gemini-embedding-001"  # requested at 768 dims
 
     # Ops Supervisor heartbeat period; 0 disables it.
     HEARTBEAT_INTERVAL_S: float = 300.0

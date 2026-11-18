@@ -104,7 +104,7 @@ async def test_min_interval_per_agent(redis, clock):
     assert blocked.used_fallback and blocked.fallback_reason == "rate"
     # Another agent is not throttled by surge's interval.
     assert not (await llm.complete_json("p3", Quote, "safety", fallback)).used_fallback
-    await redis.delete("llm:last:surge")  # fakeredis TTLs run on wall time; emulate expiry
+    clock.advance(21)  # the lock follows the injected clock, even on Redis
     assert not (await llm.complete_json("p4", Quote, "surge", fallback)).used_fallback
     assert len(provider.calls) == 3
 
@@ -130,8 +130,7 @@ async def test_cache_hit_skips_provider_and_guardrails(redis, clock):
     b = await llm.budget()
     assert b["cache_hits"] == 1 and b["calls_today"] == 1
     # Cache expires after the TTL.
-    clock.advance(601)
-    await redis.flushall()  # fakeredis TTLs use wall time; emulate expiry
+    clock.advance(601)  # expiry follows the injected clock, even on Redis
     provider.script.append(llm_response({"fare": 1}))
     assert not (await llm.complete_json("same prompt", Quote, "surge", fallback)).cached
 
@@ -220,7 +219,9 @@ async def test_redis_failure_degrades_to_memory(clock):
 async def test_budget_shape(redis, clock):
     b = await make_llm(redis, clock).budget()
     assert set(b) >= {"calls_today", "tokens_today", "limits", "enabled", "cache_hits", "model", "day"}
-    assert b["limits"] == {"daily_calls": 300, "daily_tokens": 200_000, "min_interval_s": 20, "timeout_s": 0.2}
+    assert b["limits"] == {"daily_calls": 300, "daily_tokens": 200_000, "min_interval_s": 20, "timeout_s": 0.2,
+                           "backoff_s": 0.5}
+    assert b["fallback_models"] == [] and b["retired_models"] == []
     assert b["store"] == "redis"
 
 

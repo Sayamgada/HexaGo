@@ -19,6 +19,16 @@ class FakeClock:
         self.t += s
 
 
+class FakeSleep:
+    """Async stand-in for asyncio.sleep: records waits instead of blocking."""
+
+    def __init__(self):
+        self.waits: List[float] = []
+
+    async def __call__(self, s: float) -> None:
+        self.waits.append(s)
+
+
 def llm_response(content: Any, tokens: int = 50):
     text = content if isinstance(content, str) else json.dumps(content)
     return SimpleNamespace(
@@ -70,6 +80,7 @@ def make_llm(redis=None, clock: Optional[Callable[[], float]] = None, completion
     )
     cfg.update(overrides)
     clock = clock or FakeClock()
+    cfg.setdefault("sleep", FakeSleep())
     return LLMClient(store=GuardStore(redis, clock=clock), clock=clock,
                      completion=completion or ScriptedProvider(), embedding=embedding or ScriptedProvider(),
                      **cfg)
