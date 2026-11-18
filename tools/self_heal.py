@@ -593,8 +593,8 @@ class LLM:
                     elif TRANSIENT_RE.search(kind):
                         if waits:
                             wait = waits.pop(0)
-                            print(f"self-heal: {model} transient error, backing off {wait}s "
-                                  "then moving on", flush=True)
+                            print(f"self-heal: {model} transient error ({msg[len(model) + 2:][:200]}), "
+                                  f"backing off {wait}s then moving on", flush=True)
                             self.sleep(wait)
                             backed_off = True
                     continue

@@ -80,9 +80,12 @@ from an older `main`, or one that edits `tools/`, can't change how it is healed.
      and **no LLM call is made**;
    - asks the LLM through LiteLLM (key `GEMINI_API_KEY`) for a short explanation and a
      minimal unified diff. Models are tried in order: `LLM_MODEL`, then `LLM_FALLBACK_MODELS`
-     (default `gemini/gemini-3.8-flash,gemini/gemini-3.5-flash-lite`; each model has its own free-tier
-     quota). A retired model (404) is dropped for the run, and
-     an LLM error counts as a failed attempt instead of crashing the run;
+     (defaults `gemini/gemini-3.5-flash`, then `gemini/gemini-3-flash-preview,gemini/gemini-3.5-flash-lite`;
+     each model has its own free-tier quota). A retired model (404) or a spent daily quota is
+     dropped for the run; a 429/5xx/timeout backs off (15/30/60/90 s) and moves on to the next
+     model, restarting the chain after a backoff. Each call times out after
+     `SELF_HEAL_LLM_TIMEOUT_S` (default 180 s, never below 90 s: gemini-3.5-flash thinks ~40 s).
+     An LLM error counts as a failed attempt instead of crashing the run;
    - checks the diff against the guardrails, applies it (`git apply --recount`, falling back
      to `patch --fuzz`), and reruns **only the failing suites**;
    - loops up to **3 attempts**, each time sending back the previous patch and its new
@@ -100,6 +103,7 @@ from an older `main`, or one that edits `tools/`, can't change how it is healed.
 |---|---|
 | Never touch `.github/` | patch validator rejects the patch |
 | Never delete tests, remove a test function, or add a skip | patch validator (Go `func Test*`, pytest `def test_*`, Dart `test(`/`testWidgets(`/`group(`) |
+| Reject patches that only edit existing tests (fix the code under test instead) | patch validator (every touched file is an existing test file) |
 | At most 5 files per patch | patch validator |
 | No loops: skip `autofix/*` branches and autofix merge commits (`[ai-autofix` in the title) | workflow `if:` + `trigger_skip_reason` |
 | One healing run per failing workflow run (≤ 3 LLM calls) | concurrency group per run id, `run_attempt == 1`, and a skip if `autofix/<run-id>` already exists |
