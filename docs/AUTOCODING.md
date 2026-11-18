@@ -80,7 +80,7 @@ from an older `main`, or one that edits `tools/`, can't change how it is healed.
      and **no LLM call is made**;
    - asks the LLM through LiteLLM (key `GEMINI_API_KEY`) for a short explanation and a
      minimal unified diff. Models are tried in order: `LLM_MODEL`, then `LLM_FALLBACK_MODELS`
-     (default `gemini/gemini-2.5-flash-lite,gemini/gemini-3.8-flash`; each model has its own free-tier
+     (default `gemini/gemini-3.5-flash-lite,gemini/gemini-3.8-flash`; each model has its own free-tier
      quota). A retired model (404) is dropped for the run, and
      an LLM error counts as a failed attempt instead of crashing the run;
    - checks the diff against the guardrails, applies it (`git apply --recount`, falling back
