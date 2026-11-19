@@ -54,7 +54,7 @@ func newStreamHarness(t *testing.T) (*Service, *store.Memory, *pubRecorder) {
 	svc, err := New(Options{
 		H3Resolution: 9, Center: center, Store: mem, Telemetry: mem,
 		Registry: prometheus.NewRegistry(), Logger: log.New(io.Discard, "", 0),
-		Publisher: pub,
+		Publisher: pub, MatchFeedInterval: -1,
 	})
 	if err != nil {
 		t.Fatal(err)

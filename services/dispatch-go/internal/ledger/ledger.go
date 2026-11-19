@@ -736,6 +736,7 @@ type Summary struct {
 	PayoutsToday         PayoutTotals `json:"payouts_today"` // sent since midnight IST; held/pending at any age
 	PlatformRevenuePaise int64        `json:"platform_revenue_paise"`
 	Rides                int64        `json:"rides_settled"`
+	RidesToday           int64        `json:"rides_settled_today"` // distinct rides settled since midnight IST
 	Entries              int64        `json:"entries"`
 	Store                string       `json:"store"`
 	AsOf                 time.Time    `json:"as_of"`
@@ -759,14 +760,23 @@ func (l *Ledger) Summary(ctx context.Context) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	s := Summary{TrialBalancePaise: tb.TotalPaise, Balanced: tb.Balanced, PayoutsToday: pt, Rides: n.Rides, Entries: n.Entries,
-		Store: l.store.Kind(), AsOf: tb.AsOf}
+	today, err := l.store.RidesSettledSince(ctx, midnight)
+	if err != nil {
+		return Summary{}, err
+	}
+	s := Summary{TrialBalancePaise: tb.TotalPaise, Balanced: tb.Balanced, PayoutsToday: pt, Rides: n.Rides, RidesToday: today,
+		Entries: n.Entries, Store: l.store.Kind(), AsOf: tb.AsOf}
 	for _, t := range tb.Types {
 		if t.Type == PlatformRevenue {
 			s.PlatformRevenuePaise = t.BalancePaise
 		}
 	}
 	return s, nil
+}
+
+// RidesSettledSince counts distinct rides settled at or after since (the Ops counters).
+func (l *Ledger) RidesSettledSince(ctx context.Context, since time.Time) (int64, error) {
+	return l.store.RidesSettledSince(ctx, since)
 }
 
 // Wallet is an owner's accounts and recent payouts.

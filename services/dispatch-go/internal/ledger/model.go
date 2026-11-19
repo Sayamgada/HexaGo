@@ -209,6 +209,8 @@ type Store interface {
 	Payout(ctx context.Context, id string) (Payout, error)
 	Payouts(ctx context.Context, f PayoutFilter) ([]Payout, error)
 	PayoutTotals(ctx context.Context, since time.Time) (PayoutTotals, error)
+	// RidesSettledSince counts distinct rides with a ride_settlement entry created at or after since.
+	RidesSettledSince(ctx context.Context, since time.Time) (int64, error)
 }
 
 func clampLimit(n int) int {

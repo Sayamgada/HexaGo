@@ -126,6 +126,7 @@ func newHarness(t *testing.T, drivers int, mutate ...func(*Options)) *harness {
 	svc, err := dispatch.New(dispatch.Options{
 		H3Resolution: 9, Center: center, Store: mem, Telemetry: mem,
 		Registry: prometheus.NewRegistry(), Logger: log.New(io.Discard, "", 0), Publisher: pub,
+		MatchFeedInterval: -1, // the harness counts every dispatch event
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -800,5 +801,55 @@ func TestRunStopsOnCancel(t *testing.T) {
 	}
 	if h.sim.Status().Running {
 		t.Fatal("status should report stopped")
+	}
+}
+
+// ---- cold start ----
+
+func TestWarmupPutsVehiclesOnTripWithinTwoMinutes(t *testing.T) {
+	ctx := context.Background()
+	onTrip := func(h *harness) int {
+		n := 0
+		for _, d := range h.pub.lastDrivers() {
+			if d.Status == string(fleet.StatusOnTrip) {
+				n++
+			}
+		}
+		return n
+	}
+	run := func(warm bool) (*harness, int) {
+		h := newHarness(t, 200, func(o *Options) { o.DemandPerMin = 2 })
+		h.sim.Spawn(ctx)
+		if warm {
+			h.sim.StartWarmup(h.clock.now())
+		}
+		for i := 0; i < 120; i++ { // two minutes of 1 s ticks
+			h.sim.DemandTick(ctx)
+			h.step(ctx, 1)
+		}
+		return h, onTrip(h)
+	}
+	h, warm := run(true)
+	_, cold := run(false)
+	t.Logf("on trip after 2 min: %d with the ramp, %d without", warm, cold)
+	if warm < 20 {
+		t.Fatalf("after 2 min with the ramp only %d of 200 vehicles are on a trip (without it: %d)", warm, cold)
+	}
+	if warm <= 2*cold {
+		t.Errorf("ramp should clearly beat steady demand: %d vs %d on trip", warm, cold)
+	}
+	if h.sim.Warming(h.clock.now()) {
+		t.Error("the ramp must end after WarmupWindow")
+	}
+	// Bounded: the ramp aims at WarmupBusyShare, never the whole fleet.
+	if busy := h.sim.ActiveRides(); busy > int(0.45*200) {
+		t.Errorf("ramp overshot: %d active rides", busy)
+	}
+	// Once the window is over it adds nothing.
+	h.sim.mu.Lock()
+	extra := h.sim.warmupRequests(h.clock.now())
+	h.sim.mu.Unlock()
+	if len(extra) != 0 {
+		t.Errorf("%d warm-up requests after the window", len(extra))
 	}
 }

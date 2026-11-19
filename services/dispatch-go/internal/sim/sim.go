@@ -188,6 +188,7 @@ type Sim struct {
 	spikes    []spike
 	open      []openRequest
 	auto      autoDemand
+	warmUntil time.Time // cold-start demand ramp (warmup.go)
 	running   bool
 	stats     tickStats
 
@@ -297,6 +298,7 @@ func (s *Sim) Run(ctx context.Context) {
 	}
 	s.planner.start(ctx)
 	s.Spawn(ctx)
+	s.StartWarmup(s.now())
 	s.log.Printf("sim: running with %d drivers, %.1f requests/min base demand, tick %v", s.target, s.base, s.tick)
 
 	var wg sync.WaitGroup
@@ -868,6 +870,9 @@ func (s *Sim) DemandTick(ctx context.Context) {
 			rider: fmt.Sprintf("r_sim_%04d", s.rng.IntN(5000)), pickup: p, dropoff: s.randomDropoff(p), tier: s.pickTier(),
 		})
 	}
+	warm := s.warmupRequests(now)
+	reqs = append(reqs, warm...)
+	n += len(warm)
 	var expired, retry []string
 	kept := s.open[:0]
 	for _, o := range s.open {

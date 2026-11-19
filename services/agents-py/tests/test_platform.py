@@ -92,7 +92,8 @@ async def test_list_agents_shape_and_stats():
     assert db["last_decision"]["decision"] == "no_match"
     assert by_id["ops_supervisor"]["status"] == "active" and by_id["ops_supervisor"]["runs_in"] == "agents-py"
     assert by_id["compliance_vision"] == {**by_id["compliance_vision"], "status": "planned", "decisions_last_hour": 0,
-                                   "fallback_rate": 0.0, "last_decision": None, "runs_in": None}
+                                   "fallback_rate": 0.0, "last_decision": None, "runs_in": None,
+                                   "last_model": None}
 
 
 # ---- Ops Supervisor heartbeat ----

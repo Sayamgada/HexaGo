@@ -13,6 +13,7 @@ import litellm
 
 from src.agents_py.agents import ops_supervisor
 from src.agents_py.agents.booking.api import router as booking_router
+from src.agents_py.agents.pricing import surge_map
 from src.agents_py.agents.pricing.api import router as pricing_router
 from src.agents_py.agents.safety.api import router as safety_router
 from src.agents_py.agents.settlement import agent as settlement_agent
@@ -45,6 +46,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(ops_supervisor.heartbeat_loop(settings.HEARTBEAT_INTERVAL_S)))
     if settings.SETTLEMENT_SCAN_INTERVAL_S > 0:
         tasks.append(asyncio.create_task(settlement_agent.scan_loop(settings.SETTLEMENT_SCAN_INTERVAL_S)))
+    if settings.SURGE_MAP_INTERVAL_S > 0:
+        tasks.append(asyncio.create_task(surge_map.surge_loop(settings.SURGE_MAP_INTERVAL_S)))
     try:
         yield
     finally:

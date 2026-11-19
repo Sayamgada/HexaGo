@@ -110,6 +110,13 @@ func (f *faulty) PayoutTotals(ctx context.Context, since time.Time) (PayoutTotal
 	return f.Store.PayoutTotals(ctx, since)
 }
 
+func (f *faulty) RidesSettledSince(ctx context.Context, since time.Time) (int64, error) {
+	if err := f.hit("RidesSettledSince"); err != nil {
+		return 0, err
+	}
+	return f.Store.RidesSettledSince(ctx, since)
+}
+
 func quietLogger() (*log.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	return log.New(&buf, "", 0), &buf

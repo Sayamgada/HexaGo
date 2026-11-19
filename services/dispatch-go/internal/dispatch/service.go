@@ -18,6 +18,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/hexago/hexago/services/dispatch-go/internal/counters"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 	"github.com/hexago/hexago/services/dispatch-go/internal/matching"
@@ -47,8 +48,11 @@ type Options struct {
 	Mirror          fleet.Mirror
 	Registry        prometheus.Registerer // nil = metrics not exported to Prometheus
 	Logger          *log.Logger
-	// Publisher receives an ops agent_event for every dispatch decision (nil = none).
+	// Publisher receives an ops agent_event for dispatch decisions (nil = none).
 	Publisher stream.Publisher
+	// MatchFeedInterval thins match / no_match events on the Ops feed to one
+	// per interval (0 = DefaultMatchFeedInterval, < 0 = every decision).
+	MatchFeedInterval time.Duration
 }
 
 // Service is the dispatch broker.
@@ -70,6 +74,10 @@ type Service struct {
 	obsMu     sync.RWMutex
 	observer  func(store.Ride)
 	completed []func(context.Context, store.Ride) // see OnRideCompleted (hooks.go)
+
+	counters *counters.Cache // persistent "today" counters (nil: in-process only)
+	feed     feedLimiter     // ops-feed rate limit for match events (see feed.go)
+	demand   demandLog       // recent ride requests for GET /v1/supply/snapshot (supply.go)
 }
 
 // New builds a Service.
@@ -124,6 +132,12 @@ func New(o Options) (*Service, error) {
 		log:       o.Logger,
 		now:       func() time.Time { return time.Now().UTC() },
 		publisher: o.Publisher,
+	}
+	switch {
+	case o.MatchFeedInterval == 0:
+		s.feed.interval = DefaultMatchFeedInterval
+	case o.MatchFeedInterval > 0:
+		s.feed.interval = o.MatchFeedInterval
 	}
 	if o.Registry != nil {
 		s.registerGauges(o.Registry)
@@ -269,6 +283,7 @@ func (s *Service) CreateRide(ctx context.Context, in CreateRideInput) (RideView,
 	} else {
 		s.rec.IncUnmatched()
 	}
+	s.demand.add(demandPoint{p: req.Pickup, at: now, matched: view != nil})
 	s.recordMatchEvent(ctx, ride, req, view, res, "")
 	if view != nil {
 		s.notify(ride)
@@ -533,9 +548,16 @@ func (s *Service) recordMatchEvent(ctx context.Context, ride store.Ride, req mat
 	if err := s.store.RecordEvent(ctx, ev); err != nil {
 		s.log.Printf("WARN dispatch: write agent_events: %v", err)
 	}
+	ok, skipped := s.feed.allow(ev.CreatedAt)
+	if !ok {
+		return // persisted above; the Ops feed shows at most one match decision per interval
+	}
 	decision, reasoning := describeMatch(ride, req, view, res)
 	if note != "" {
 		decision += "; " + note
+	}
+	if skipped > 0 {
+		reasoning += fmt.Sprintf(" (+%d more dispatch decisions in the last %s, all in the audit trail.)", skipped, s.feed.interval)
 	}
 	pub := stream.NewAgentEvent(AgentName, decision, reasoning, ev.Confidence, ev.LatencyMs, false, ev.CreatedAt)
 	pub.Kind, pub.RideID, pub.RequestedTier = ev.EventType, ride.ID, string(req.Tier)
@@ -780,6 +802,10 @@ type DispatchMetrics struct {
 	IdleDrivers     int            `json:"idle_drivers"`
 	OpenRequests    int            `json:"open_requests"`
 	RidesInProgress int            `json:"rides_in_progress"`
+	// Persistent counters since midnight IST (agent_events + ledger, 10 s cache).
+	MatchesToday      int64  `json:"matches_today"`
+	RidesSettledToday int64  `json:"rides_settled_today"`
+	DecisionsToday    int64  `json:"decisions_today"`
 }
 
 // Metrics returns the live dispatch summary.
@@ -790,10 +816,48 @@ func (s *Service) Metrics(ctx context.Context) (DispatchMetrics, error) {
 	if err != nil {
 		return DispatchMetrics{}, err
 	}
-	return DispatchMetrics{
+	m := DispatchMetrics{
 		P50Ms: metrics.Millis(p50), P95Ms: metrics.Millis(p95), P99Ms: metrics.Millis(p99),
 		MatchesTotal:  s.rec.MatchesTotal(),
 		ActiveDrivers: fc.Active, IdleDrivers: fc.Idle,
 		OpenRequests: rc.Open, RidesInProgress: rc.InProgress,
-	}, nil
+		MatchesToday: int64(s.rec.MatchesTotal()),
+	}
+	if c, ok := s.Counters(ctx); ok {
+		m.MatchesToday, m.RidesSettledToday, m.DecisionsToday = c.MatchesToday, c.RidesSettledToday, c.DecisionsToday
+	}
+	return m, nil
+}
+
+// SetCounters makes Metrics report the persistent "today" counters from c.
+func (s *Service) SetCounters(c *counters.Cache) {
+	s.obsMu.Lock()
+	s.counters = c
+	s.obsMu.Unlock()
+}
+
+// Counters returns the cached persistent counters (ok=false when not configured or unavailable).
+func (s *Service) Counters(ctx context.Context) (counters.Counts, bool) {
+	s.obsMu.RLock()
+	c := s.counters
+	s.obsMu.RUnlock()
+	if c == nil {
+		return counters.Counts{}, false
+	}
+	got, err := c.Get(ctx)
+	if err != nil {
+		s.log.Printf("WARN dispatch: counters: %v", err)
+		return counters.Counts{}, false
+	}
+	return got, true
+}
+
+// MemoryEventCounts counts this broker's in-memory agent events (ok=false for other stores).
+func (s *Service) MemoryEventCounts(since time.Time) (matches, decisions int64, ok bool) {
+	mem, isMem := s.store.(*store.Memory)
+	if !isMem {
+		return 0, 0, false
+	}
+	matches, decisions = mem.EventCountsSince(AgentName, "match", since)
+	return matches, decisions, true
 }

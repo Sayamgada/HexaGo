@@ -35,3 +35,5 @@ python:
     - src/agents_py/agents/booking/fallback_parser.py
     - src/agents_py/agents/booking/itinerary.py
     - src/agents_py/agents/pricing/quote.py
+    # Surge Equilibrium surge map.
+    - src/agents_py/agents/pricing/surge_map.py

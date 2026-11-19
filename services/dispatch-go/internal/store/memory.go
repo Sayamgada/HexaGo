@@ -213,3 +213,21 @@ func (m *Memory) CloseStaleRides(_ context.Context, before time.Time, reason str
 	}
 	return n, nil
 }
+
+// EventCountsSince returns how many events at or after since match agent and
+// eventType, and how many there are in total (the Ops "today" counters).
+func (m *Memory) EventCountsSince(agent, eventType string, since time.Time) (matching, total int64) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for i := len(m.events) - 1; i >= 0; i-- {
+		e := m.events[i]
+		if e.CreatedAt.Before(since) {
+			continue
+		}
+		total++
+		if e.Agent == agent && e.EventType == eventType {
+			matching++
+		}
+	}
+	return matching, total
+}

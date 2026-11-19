@@ -2,6 +2,7 @@
 
     GET  /v1/eta?from_lat&from_lng&to_lat&to_lng   trip estimate (road km, minutes)
     GET  /v1/supply?lat&lng                        idle vs busy cars around the pickup H3 cell
+    GET  /v1/supply/snapshot?window_s              every vehicle + recent requests (surge map)
     POST /v1/scheduled                             store a confirmed plan's legs for dispatch
 """
 from __future__ import annotations
@@ -53,6 +54,10 @@ class DispatchGateway:
             return CellLoad(source="unavailable")
         return CellLoad(cell=str(d.get("cell", "")), supply=int(d.get("supply", 0)),
                         demand=int(d.get("demand", 0)), source="dispatch-go")
+
+    async def snapshot(self, window_s: int = 300) -> Dict[str, Any]:
+        """Vehicle positions/statuses and the ride requests of the last window_s seconds."""
+        return await self._request("GET", "/v1/supply/snapshot", params={"window_s": int(window_s)})
 
     async def schedule(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return await self._request("POST", "/v1/scheduled", json=payload)

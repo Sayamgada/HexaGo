@@ -187,7 +187,7 @@ class SettlementAgent:
             AGENT, f"explain {f.check} on ride {f.ride_id}", f"settlement anomaly: {f.check} on ride {f.ride_id[:8]}",
             res.data["explanation"], f.severity, _ms(start), res.used_fallback, res.fallback_reason,
             {"kind": "settlement_anomaly", "ride_id": f.ride_id, "driver_id": f.driver_id, "check": f.check,
-             "key": f.key, "tokens": res.tokens},
+             "key": f.key, "tokens": res.tokens, "model": res.model},
         )
 
     def view(self) -> Dict[str, Any]:

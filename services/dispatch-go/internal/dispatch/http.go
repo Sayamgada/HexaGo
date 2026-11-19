@@ -19,6 +19,7 @@ func (s *Service) Routes(r chi.Router) {
 	r.Post("/v1/rides/{id}/cancel", s.handleCancelRide)
 	r.Post("/v1/drivers/{id}/status", s.handleDriverStatus)
 	r.Get("/v1/metrics/dispatch", s.handleMetrics)
+	r.Get("/v1/supply/snapshot", s.handleSnapshot)
 }
 
 func (s *Service) handleCreateRide(w http.ResponseWriter, r *http.Request) {

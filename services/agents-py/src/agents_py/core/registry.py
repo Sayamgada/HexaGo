@@ -94,7 +94,7 @@ async def list_agents(store: EventStore, now: Optional[dt.datetime] = None) -> L
     stats = await store.agent_stats(now - dt.timedelta(hours=1))
     out = []
     for a in ROSTER:
-        s = stats.get(a.id, {"count": 0, "fallbacks": 0, "last": None})
+        s = stats.get(a.id, {"count": 0, "fallbacks": 0, "last": None, "model": None})
         last = s["last"]
         reg = _registered.get(a.id)
         out.append({
@@ -107,6 +107,7 @@ async def list_agents(store: EventStore, now: Optional[dt.datetime] = None) -> L
             "runs_in": "agents-py" if reg else EXTERNAL.get(a.id),
             "decisions_last_hour": s["count"],
             "fallback_rate": round(s["fallbacks"] / s["count"], 4) if s["count"] else 0.0,
+            "last_model": s.get("model"),
             "last_decision": None if last is None else {
                 "decision": last["decision"], "reasoning": last["reasoning"], "ts": last["ts"],
                 "used_fallback": last["used_fallback"], "confidence": last["confidence"],

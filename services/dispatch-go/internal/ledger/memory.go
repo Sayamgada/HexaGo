@@ -244,3 +244,17 @@ func (m *Memory) PayoutTotals(_ context.Context, since time.Time) (PayoutTotals,
 	}
 	return t, nil
 }
+
+// RidesSettledSince implements Store.
+func (m *Memory) RidesSettledSince(_ context.Context, since time.Time) (int64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	seen := map[string]bool{}
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		e := m.entries[i]
+		if e.Kind == KindRide && !e.CreatedAt.Before(since) {
+			seen[e.RideID] = true
+		}
+	}
+	return int64(len(seen)), nil
+}

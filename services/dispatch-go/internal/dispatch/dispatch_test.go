@@ -324,7 +324,8 @@ func TestDispatchMetricsShape(t *testing.T) {
 			t.Fatalf("value for %v is not a number: %v", k, err)
 		}
 	}
-	want := []string{"p50_ms", "p95_ms", "p99_ms", "matches_total", "active_drivers", "idle_drivers", "open_requests", "rides_in_progress"}
+	want := []string{"p50_ms", "p95_ms", "p99_ms", "matches_total", "active_drivers", "idle_drivers", "open_requests", "rides_in_progress",
+		"matches_today", "rides_settled_today", "decisions_today"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Errorf("keys = %v, want %v", keys, want)
 	}

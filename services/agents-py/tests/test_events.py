@@ -143,13 +143,19 @@ async def test_agent_stats_from_memory_and_db():
     store = ev.EventStore(pool=None, redis=None, clock=lambda: now)
     await store.record_event("Dispatch Broker", "", "m1", "", 1, 0, False)
     await store.record_event("dispatch_broker", "", "m2", "", 1, 0, True)
+    await store.record_event("booking_intent", "", "b1", "", 1, 0, False, metadata={"model": "gemini/x"})
+    await store.record_event("booking_intent", "", "b2", "", 1, 0, False)
     stats = await store.agent_stats(now - dt.timedelta(hours=1))
     assert stats["dispatch_broker"]["count"] == 2 and stats["dispatch_broker"]["fallbacks"] == 1
-    assert stats["dispatch_broker"]["last"]["decision"] == "m2"
+    assert stats["dispatch_broker"]["last"]["decision"] == "m2" and stats["dispatch_broker"]["model"] is None
+    assert stats["booking_intent"]["model"] == "gemini/x" and stats["booking_intent"]["last"]["decision"] == "b2"
 
     def handler(sql, args):
         if "GROUP BY agent" in sql:
             return [{"agent": "safety_sentinel", "n": 4, "fallbacks": 4}]
+        if "AS model" in sql:
+            assert args[0] == now - dt.timedelta(days=1)
+            return [{"agent": "safety_sentinel", "model": "gemini/gemini-3.5-flash-lite"}, {"agent": "x", "model": None}]
         if "DISTINCT ON" in sql:
             return [_db_row(9, agent="safety_sentinel"), _db_row(8, agent="fleet_simulator")]
         return 1
@@ -158,6 +164,7 @@ async def test_agent_stats_from_memory_and_db():
     stats = await store.agent_stats(now)
     assert stats["safety_sentinel"]["count"] == 4 and stats["safety_sentinel"]["last"]["decision"] == "d9"
     assert stats["fleet_simulator"]["count"] == 0
+    assert stats["safety_sentinel"]["model"] == "gemini/gemini-3.5-flash-lite" and "x" not in stats
 
 
 async def test_agent_stats_db_failure_uses_ring():

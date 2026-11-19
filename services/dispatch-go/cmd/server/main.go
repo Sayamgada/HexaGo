@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/hexago/hexago/services/dispatch-go/internal/config"
+	"github.com/hexago/hexago/services/dispatch-go/internal/counters"
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
@@ -43,6 +44,7 @@ func main() {
 	var telemetry store.TelemetryStore = store.NewMemory()
 	var schedRepo scheduler.Repo
 	var ledgerStore ledger.Store = ledger.NewMemory()
+	var dailyCounters *counters.Cache // nil: the router counts the in-memory stores
 	if cfg.DatabaseURL != "" {
 		pg, err := store.OpenPostgres(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -53,6 +55,7 @@ func main() {
 			ledgerStore = ledger.NewPostgres(pg.Pool())
 			telemetry = store.NewPostgresTelemetry(pg.Pool())
 			schedRepo = scheduler.NewPGRepo(pg.Pool())
+			dailyCounters = counters.NewCache(counters.NewPostgres(pg.Pool()), 0, nil)
 			log.Println("Postgres connected; migrations applied")
 		}
 	} else {
@@ -137,6 +140,9 @@ func main() {
 
 	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon),
 		server.WithSafety(safetySvc), server.WithLedger(led)}
+	if dailyCounters != nil {
+		routerOpts = append(routerOpts, server.WithCounters(dailyCounters))
+	}
 
 	// Scheduler: legs of confirmed multi-leg booking plans, dispatched at pickup
 	// time (DEMO_MODE: 20 s after confirm, then 60 s after each leg completes).

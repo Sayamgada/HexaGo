@@ -193,11 +193,12 @@ class EventStore:
         return [_public(e) for e in out[:limit]]
 
     async def agent_stats(self, since: dt.datetime) -> Dict[str, Dict[str, Any]]:
-        """Per agent id: decisions since `since`, how many used a fallback, last decision ever."""
+        """Per agent id: decisions since `since`, how many used a fallback, last decision ever, and the
+        model named by its latest event that recorded one (LLM or rule model) in the day before `since`."""
         stats: Dict[str, Dict[str, Any]] = {}
 
         def entry(name: str) -> Dict[str, Any]:
-            return stats.setdefault(agent_id(name), {"count": 0, "fallbacks": 0, "last": None})
+            return stats.setdefault(agent_id(name), {"count": 0, "fallbacks": 0, "last": None, "model": None})
 
         if self.pool is not None:
             try:
@@ -212,6 +213,12 @@ class EventStore:
                         f"SELECT DISTINCT ON (agent) {_COLUMNS} FROM agent_events "
                         "ORDER BY agent, created_at DESC, id DESC"):
                     entry(r["agent"])["last"] = _from_row(r)
+                for r in await self.pool.fetch(
+                        "SELECT DISTINCT ON (agent) agent, decision->'metadata'->>'model' AS model FROM agent_events "
+                        "WHERE created_at >= $1 AND decision->'metadata'->>'model' IS NOT NULL "
+                        "ORDER BY agent, created_at DESC", since - dt.timedelta(days=1)):
+                    if r.get("model"):
+                        entry(r["agent"])["model"] = r["model"]
                 return stats
             except Exception as err:  # noqa: BLE001
                 log.warning("agent stats query failed (serving memory): %s", err)
@@ -220,6 +227,8 @@ class EventStore:
             s = entry(e["agent"])
             if s["last"] is None:
                 s["last"] = _public(e)
+            if s["model"] is None and (e.get("metadata") or {}).get("model"):
+                s["model"] = e["metadata"]["model"]
             if e["_at"] >= since:
                 s["count"] += 1
                 s["fallbacks"] += int(e["used_fallback"])

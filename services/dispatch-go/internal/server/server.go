@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 
 	"github.com/hexago/hexago/services/dispatch-go/internal/config"
 	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
+	"github.com/hexago/hexago/services/dispatch-go/internal/counters"
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 	"github.com/hexago/hexago/services/dispatch-go/internal/ledger"
@@ -41,6 +41,9 @@ type RouterOptions struct {
 	Safety    *safety.Service
 	Ledger    *ledger.Ledger
 	Scheduler *scheduler.Scheduler
+	Counters  *counters.Cache
+	// AgentsWake bounds proxy retries while agents-py wakes (0 = DefaultAgentsWakeTimeout).
+	AgentsWake time.Duration
 }
 
 // WithRedisMonitor reports m's latest Redis check on /healthz;
@@ -220,31 +223,15 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	if err != nil {
 		log.Printf("Warning: Failed to parse AGENTS_URL '%s': %v", cfg.AgentsURL, err)
 	} else {
-		proxy := httputil.NewSingleHostReverseProxy(target)
-		if options.Transport != nil {
-			proxy.Transport = options.Transport
-		}
-		proxy.ModifyResponse = func(resp *http.Response) error {
-			cors.StripUpstream(resp.Header)
-			return nil
-		}
-		originalDirector := proxy.Director
-		proxy.Director = func(req *http.Request) {
-			originalDirector(req)
-			req.Host = target.Host
-		}
-
-		r.HandleFunc("/v1/agents", func(w http.ResponseWriter, r *http.Request) {
-			proxy.ServeHTTP(w, r)
-		})
-		r.HandleFunc("/v1/agents/*", func(w http.ResponseWriter, r *http.Request) {
-			proxy.ServeHTTP(w, r)
-		})
-		agentsProxy = proxy
+		// Retries while agents-py cold-starts, then answers JSON 503 agents_waking (agents_proxy.go).
+		agentsProxy = newAgentsProxy(target, options.Transport, options.AgentsWake)
+		r.Handle("/v1/agents", agentsProxy)
+		r.Handle("/v1/agents/*", agentsProxy)
 	}
 	mountSafety(r, options.Safety, agentsProxy)
 	options.Ledger = mountLedger(r, options.Ledger, cfg, svc, options.Safety, hub)
 	options.Scheduler = mountScheduler(r, options.Scheduler, cfg, svc, agentsProxy)
+	mountCounters(r, options.Counters, svc, options.Ledger)
 
 	return r
 }

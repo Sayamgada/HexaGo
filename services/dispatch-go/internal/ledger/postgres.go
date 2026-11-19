@@ -399,3 +399,11 @@ func (p *Postgres) PayoutTotals(ctx context.Context, since time.Time) (PayoutTot
 		FROM payouts`, since).Scan(&t.SentCount, &t.SentPaise, &t.HeldCount, &t.HeldPaise, &t.PendingCount)
 	return t, err
 }
+
+// RidesSettledSince implements Store.
+func (p *Postgres) RidesSettledSince(ctx context.Context, since time.Time) (int64, error) {
+	var n int64
+	err := p.pool.QueryRow(ctx, `SELECT count(DISTINCT ride_id) FROM journal_entries
+		WHERE kind = 'ride_settlement' AND created_at >= $1`, since).Scan(&n)
+	return n, err
+}

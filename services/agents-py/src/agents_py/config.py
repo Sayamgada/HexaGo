@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     HEARTBEAT_INTERVAL_S: float = 300.0
     # Settlement agent ledger audit period; 0 disables it.
     SETTLEMENT_SCAN_INTERVAL_S: float = 60.0
+    # Surge Equilibrium surge-map recompute period; 0 disables the loop (the endpoint still computes on demand).
+    SURGE_MAP_INTERVAL_S: float = 30.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

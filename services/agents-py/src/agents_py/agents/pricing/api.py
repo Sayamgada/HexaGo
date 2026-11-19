@@ -3,6 +3,7 @@
     POST /v1/pricing/quote   {tier, pickup:{lat,lng}, dropoff:{lat,lng}}  -> fare breakdown
                              or {tier, distance_km, duration_min, supply?, demand?}
     GET  /v1/pricing/tiers   rate card
+    GET  /v1/pricing/surge-map  H3 res-8 cells with multiplier + boundary (Surge Equilibrium, every 30 s)
 """
 from __future__ import annotations
 
@@ -13,7 +14,9 @@ from pydantic import BaseModel, Field
 
 from src.agents_py.agents.booking.gateway import DispatchGateway
 from src.agents_py.agents.booking.itinerary import estimate
+from src.agents_py.agents.pricing import surge_map
 from src.agents_py.agents.pricing.quote import RATES, SURGE_CAP, CellLoad, quote
+from src.agents_py.config import settings
 
 router = APIRouter()
 
@@ -65,3 +68,13 @@ async def price_quote(body: QuoteIn):
     except ValueError as err:
         raise HTTPException(422, str(err)) from None
     return {**q, "eta_source": source}
+
+
+@router.get("/v1/pricing/surge-map")
+async def get_surge_map():
+    """The latest surge map; recomputed here if the 30 s loop has not run lately (e.g. right after a wake-up)."""
+    m = surge_map.get_map()
+    interval = settings.SURGE_MAP_INTERVAL_S or 30
+    if m.stale(2 * interval):
+        await surge_map.recompute(m)
+    return {**m.view(), "interval_s": interval}
