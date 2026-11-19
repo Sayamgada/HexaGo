@@ -21,6 +21,10 @@ class AppConfig {
       : !kReleaseMode;
 
   static const String appName = 'HexaGo';
+
+  /// Source repository and the latest desktop / Android release.
+  static const String repoUrl = 'https://github.com/Sayamgada/HexaGo';
+  static const String releasesUrl = '$repoUrl/releases/latest';
   static const String defaultCity = 'Bengaluru';
   static const double cityLat = 12.9716;
   static const double cityLng = 77.5946;

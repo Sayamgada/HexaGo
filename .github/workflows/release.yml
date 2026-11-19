@@ -1,0 +1,141 @@
+name: Release
+
+# Builds the Flutter app for Windows (zip of the Release folder) and Android
+# (release APK, debug-signed) against the production gateway and attaches both
+# to the GitHub Release of the tag. Asset names are fixed so
+# https://github.com/<repo>/releases/latest/download/<name> always works.
+#
+# A manual run on a branch (no v* tag) only builds: a dry run of both artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and (re)publish, e.g. v1.0.0 (empty: build the selected ref without publishing)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  API_BASE_URL: https://dispatch-go.onrender.com
+  WS_BASE_URL: wss://dispatch-go.onrender.com
+
+jobs:
+  windows:
+    name: windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/hexago_app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: flutter build windows (production URLs)
+        run: |
+          $name = if ($env:TAG -match '^v\d') { @('--build-name', $env:TAG.TrimStart('v')) } else { @() }
+          flutter build windows --release @name `
+            "--dart-define=API_BASE_URL=$env:API_BASE_URL" `
+            "--dart-define=WS_BASE_URL=$env:WS_BASE_URL" `
+            --dart-define=USE_MOCK=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Zip the Release folder
+        run: |
+          $out = "build/windows/x64/runner/Release"
+          if (-not (Test-Path "$out/hexago_app.exe")) { Get-ChildItem -Recurse build/windows -Filter *.exe; throw "no hexago_app.exe in $out" }
+          Rename-Item "$out/hexago_app.exe" "HexaGo.exe"
+          Compress-Archive -Path "$out/*" -DestinationPath "$env:GITHUB_WORKSPACE/HexaGo-windows-x64.zip" -Force
+          Get-Item "$env:GITHUB_WORKSPACE/HexaGo-windows-x64.zip" | Format-List Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: HexaGo-windows-x64.zip
+          if-no-files-found: error
+
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/hexago_app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: flutter build apk (production URLs, debug-signed release)
+        run: |
+          name=()
+          if [[ "$TAG" =~ ^v[0-9] ]]; then name=(--build-name "${TAG#v}"); fi
+          flutter build apk --release "${name[@]}" \
+            "--dart-define=API_BASE_URL=$API_BASE_URL" \
+            "--dart-define=WS_BASE_URL=$WS_BASE_URL" \
+            --dart-define=USE_MOCK=false
+          cp build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/HexaGo-android.apk"
+          ls -l "$GITHUB_WORKSPACE/HexaGo-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: HexaGo-android.apk
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: [windows, android]
+    if: startsWith(inputs.tag || github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          cat > notes.md <<EOF
+          ## HexaGo ${TAG}
+
+          | Download | |
+          |---|---|
+          | **Windows** (x64) | \`HexaGo-windows-x64.zip\`: unzip and run \`HexaGo.exe\` (unsigned: on a SmartScreen prompt choose More info, then Run anyway) |
+          | **Android** | \`HexaGo-android.apk\`: allow installs from your browser or file manager, then open it (debug-signed) |
+          | **Web** | https://hexago-web.onrender.com |
+
+          Both apps talk to the production gateway (${API_BASE_URL}); the free Render services can take up to a minute to wake.
+          Public API reference: ${API_BASE_URL}/docs
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/HexaGo-windows-x64.zip dist/HexaGo-android.apk --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/HexaGo-windows-x64.zip dist/HexaGo-android.apk \
+              --title "HexaGo ${TAG}" --notes-file notes.md --verify-tag
+          fi
+          gh release view "$TAG" --json assets -q '.assets[] | .name + "  " + (.size|tostring) + " bytes"'

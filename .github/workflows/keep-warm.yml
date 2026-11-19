@@ -1,0 +1,55 @@
+name: Keep warm
+
+# Keeps the free Render services awake for the demo: every 10 minutes it GETs
+# dispatch-go /healthz, /v1/agents (proxied to agents-py, which wakes it) and
+# the web app, and logs the response times in the job summary.
+# On only while the repository variable KEEP_WARM is "true":
+#   gh variable set KEEP_WARM --body true     (on)
+#   gh variable set KEEP_WARM --body false    (off; or delete it)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: ping
+    if: vars.KEEP_WARM == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: GET the services and record response times
+        run: |
+          targets=(
+            "dispatch-go /healthz|https://dispatch-go.onrender.com/healthz"
+            "agents-py via /v1/agents|https://dispatch-go.onrender.com/v1/agents"
+            "hexago-web|https://hexago-web.onrender.com/"
+          )
+          {
+            echo "### Keep-warm $(date -u '+%Y-%m-%d %H:%M:%S') UTC"
+            echo ""
+            echo "| Target | HTTP | Time (s) | Note |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          failed=0
+          for t in "${targets[@]}"; do
+            name="${t%%|*}"; url="${t#*|}"
+            out=$(curl -s -o /dev/null -w '%{http_code} %{time_total}' --max-time 120 \
+                  --retry 2 --retry-delay 5 --retry-all-errors "$url" || true)
+            code="${out%% *}"; secs="${out##* }"
+            [ -z "$code" ] && code=000 && secs=0
+            note="warm"
+            awk "BEGIN{exit !($secs > 5)}" && note="was asleep (cold start)"
+            [ "$code" -ge 200 ] 2>/dev/null && [ "$code" -lt 400 ] || { note="FAILED"; failed=1; }
+            echo "$name: HTTP $code in ${secs}s ($note)"
+            echo "| $name | $code | $secs | $note |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $failed

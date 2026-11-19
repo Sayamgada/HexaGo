@@ -1,15 +1,22 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../config/app_config.dart';
+import '../util/links.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends ConsumerStatefulWidget {
+  /// [showDownloadLink] shows the desktop / Android download link off the web
+  /// too (it is always shown on the web, where those apps are an alternative).
+  const HomeScreen({super.key, this.showDownloadLink = false});
+
+  final bool showDownloadLink;
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedRole;
 
   void _onRoleSelected(String role) {
@@ -22,6 +29,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (role == 'Rider') {
       context.push('/rider');
+      return;
+    }
+    if (role == 'Developers') {
+      context.push('/developers');
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -80,6 +91,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(fontSize: 15, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
+                  if (kIsWeb || widget.showDownloadLink) ...[
+                    const SizedBox(height: 12),
+                    Center(
+                      child: TextButton.icon(
+                        key: const Key('download-apps'),
+                        onPressed: () => ref.read(linkOpenerProvider)(Uri.parse(AppConfig.releasesUrl)),
+                        icon: const Icon(Icons.download_rounded, size: 18),
+                        label: const Text('Download desktop / Android app'),
+                      ),
+                    ),
+                  ],
                   if (_selectedRole != null) ...[
                     const SizedBox(height: 16),
                     Container(
@@ -103,27 +125,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 32),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final isWide = constraints.maxWidth > 700;
-                      return isWide
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: _buildRiderCard()),
-                                const SizedBox(width: 16),
-                                Expanded(child: _buildDriverCard()),
-                                const SizedBox(width: 16),
-                                Expanded(child: _buildOpsCard()),
-                              ],
-                            )
-                          : Column(
-                              children: [
-                                _buildRiderCard(),
-                                const SizedBox(height: 16),
-                                _buildDriverCard(),
-                                const SizedBox(height: 16),
-                                _buildOpsCard(),
-                              ],
-                            );
+                      final cards = [_buildRiderCard(), _buildDriverCard(), _buildOpsCard(), _buildDevelopersCard()];
+                      if (constraints.maxWidth > 860) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final (i, c) in cards.indexed) ...[
+                              if (i > 0) const SizedBox(width: 16),
+                              Expanded(child: c),
+                            ],
+                          ],
+                        );
+                      }
+                      if (constraints.maxWidth > 520) {
+                        return Column(children: [
+                          for (var i = 0; i < cards.length; i += 2) ...[
+                            if (i > 0) const SizedBox(height: 16),
+                            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Expanded(child: cards[i]),
+                              const SizedBox(width: 16),
+                              Expanded(child: cards[i + 1]),
+                            ]),
+                          ],
+                        ]);
+                      }
+                      return Column(children: [
+                        for (final (i, c) in cards.indexed) ...[
+                          if (i > 0) const SizedBox(height: 16),
+                          c,
+                        ],
+                      ]);
                     },
                   ),
                   const SizedBox(height: 24),
@@ -169,6 +200,16 @@ class _HomeScreenState extends State<HomeScreen> {
       description: 'Live agent audit events stream, reasoning telemetry, and autonomous fleet override controls.',
       icon: Icons.admin_panel_settings_outlined,
       color: Colors.amberAccent,
+    );
+  }
+
+  Widget _buildDevelopersCard() {
+    return _buildRoleCard(
+      title: 'Developers',
+      subtitle: 'Public API & SDKs',
+      description: 'Self-serve API keys, curl examples, webhooks, Python and TypeScript SDKs, and the OpenAPI reference.',
+      icon: Icons.code,
+      color: Colors.cyanAccent,
     );
   }
 

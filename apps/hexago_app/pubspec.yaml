@@ -1,5 +1,5 @@
 name: hexago_app
-description: "A new Flutter project."
+description: "HexaGo: AI-native ride hailing (rider, driver, ops command center, developer portal)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -43,6 +43,7 @@ dependencies:
   latlong2: ^0.10.1
   flutter_tts: ^4.2.5
   speech_to_text: ^7.5.0
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

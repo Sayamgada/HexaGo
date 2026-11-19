@@ -18,6 +18,11 @@ namespace {
 
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
+/// Smallest client area, in logical pixels, the window can be resized to
+/// (the Ops Command Center and Rider layouts are designed for 1280x720).
+constexpr int kMinClientWidth = 1280;
+constexpr int kMinClientHeight = 720;
+
 /// Registry key for app theme preference.
 ///
 /// A value of 0 indicates apps should use dark mode. A non-zero or missing
@@ -186,6 +191,21 @@ Win32Window::MessageHandler(HWND hwnd,
         PostQuitMessage(0);
       }
       return 0;
+
+    case WM_GETMINMAXINFO: {
+      // Keep the client area at least kMinClientWidth x kMinClientHeight
+      // logical pixels at the window's current DPI.
+      const double scale = FlutterDesktopGetDpiForHWND(hwnd) / 96.0;
+      RECT frame = {0, 0, Scale(kMinClientWidth, scale),
+                    Scale(kMinClientHeight, scale)};
+      AdjustWindowRectEx(&frame, static_cast<DWORD>(GetWindowLong(hwnd, GWL_STYLE)),
+                         FALSE,
+                         static_cast<DWORD>(GetWindowLong(hwnd, GWL_EXSTYLE)));
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      info->ptMinTrackSize.x = frame.right - frame.left;
+      info->ptMinTrackSize.y = frame.bottom - frame.top;
+      return 0;
+    }
 
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);

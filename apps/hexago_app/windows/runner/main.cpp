@@ -26,8 +26,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"hexago_app", origin, size)) {
+  // Starts a little above the 1280x720 minimum client area (see win32_window.cpp).
+  Win32Window::Size size(1366, 800);
+  if (!window.Create(L"HexaGo", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

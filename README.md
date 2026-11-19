@@ -16,6 +16,20 @@ All services run on Render (Free plan, created manually; see [Manual Render setu
 
 Quick checks: [`/healthz`](https://dispatch-go.onrender.com/healthz) and [`/v1/agents/ping`](https://dispatch-go.onrender.com/v1/agents/ping) (proxied to agents-py). Free services sleep when idle, so the first request can take about a minute.
 
+### Download desktop / Android app
+
+| Platform | Download |
+|---|---|
+| Windows (x64) | [HexaGo-windows-x64.zip](https://github.com/Sayamgada/HexaGo/releases/latest/download/HexaGo-windows-x64.zip): unzip and run `HexaGo.exe` |
+| Android | [HexaGo-android.apk](https://github.com/Sayamgada/HexaGo/releases/latest/download/HexaGo-android.apk) (debug-signed; allow installs from unknown sources) |
+| All releases | https://github.com/Sayamgada/HexaGo/releases/latest |
+
+Both builds talk to the production gateway (URLs baked in with `--dart-define`). They are built by [`release.yml`](.github/workflows/release.yml) on every `v*` tag.
+
+### Public API
+
+Swagger UI: **https://dispatch-go.onrender.com/docs** · OpenAPI 3.1: [`/openapi.json`](https://dispatch-go.onrender.com/openapi.json) · quickstart: [`docs/API.md`](docs/API.md) · SDKs: [`sdk/python`](sdk/python/hexago.py), [`sdk/typescript`](sdk/typescript/hexago.ts). Get a key with `POST /v1/developer/keys` (or the **Developers** card in the app).
+
 ---
 
 ## Architecture Overview
@@ -139,6 +153,8 @@ Both services read `CORS_ALLOWED_ORIGINS`, a comma-separated list of allowed bro
 | `/v1/ping` | `GET` | Gateway ping route |
 | `/v1/ws` | `GET` | Bidirectional WebSocket for telemetry & dispatch |
 | `/v1/agents/*` | `ANY` | Reverse proxy forwarding to `agents-py` |
+| `/openapi.json`, `/docs` | `GET` | OpenAPI 3.1 document of every public endpoint, Swagger UI |
+| `/v1/developer/*` | `POST/GET/DELETE` | API keys (scopes, per-key rate limits) and signed webhooks: see [`docs/API.md`](docs/API.md) |
 
 ---
 
@@ -159,6 +175,8 @@ The `.github/workflows/ci.yml` pipeline runs on every push and pull request:
 - **Go**: `go test -v -race -coverprofile=coverage.out ./...` with CGO enabled.
 - **Python**: `pytest -v --cov=. --cov-report=term-missing` on Python 3.12.
 - **Flutter**: `flutter analyze` and `flutter test --coverage`.
+
+`.github/workflows/release.yml` builds the Windows zip and the Android APK on `v*` tags (or manually) and attaches them to the GitHub Release. `.github/workflows/keep-warm.yml` pings the gateway, agents-py and the web app every 10 minutes while the repository variable `KEEP_WARM` is `true` (`gh variable set KEEP_WARM --body false` turns it off).
 
 ---
 

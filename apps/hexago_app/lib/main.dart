@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
+import 'features/developers/developers_screen.dart';
 import 'features/ops/ops_command_center_screen.dart';
 import 'features/rider/rider_screen.dart';
 import 'features/safety/safety_call_screen.dart';
@@ -18,6 +19,7 @@ GoRouter buildRouter({String initialLocation = '/'}) => GoRouter(
       routes: [
         GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
         GoRoute(path: '/ops', builder: (context, state) => const OpsCommandCenterScreen()),
+        GoRoute(path: '/developers', builder: (context, state) => const DevelopersScreen()),
         GoRoute(
           path: '/rider',
           builder: (context, state) => RiderScreen(initialPersonaId: state.uri.queryParameters['persona']),

@@ -43,6 +43,7 @@ void main() {
       expect(find.byKey(const Key('role-card-Rider')), findsOneWidget);
       expect(find.byKey(const Key('role-card-Driver')), findsOneWidget);
       expect(find.byKey(const Key('role-card-Ops Command Center')), findsOneWidget);
+      expect(find.byKey(const Key('role-card-Developers')), findsOneWidget);
 
       // Verify role descriptions
       expect(find.textContaining('Natural language intent'), findsOneWidget);
@@ -61,6 +62,22 @@ void main() {
 
       expect(find.text('HexaGo Rider'), findsOneWidget);
       expect(find.byKey(const Key('persona-rider_priya')), findsOneWidget);
+    });
+
+    testWidgets('tapping the Developers card opens the developer portal', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1400, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_app());
+      await tester.tap(find.byKey(const Key('role-card-Developers')));
+      await tester.pumpAndSettle();
+      expect(find.text('HexaGo Public API'), findsOneWidget);
+      expect(find.byKey(const Key('create-key')), findsOneWidget);
+    });
+
+    testWidgets('the download link is web-only by default', (WidgetTester tester) async {
+      await tester.pumpWidget(_app());
+      expect(find.byKey(const Key('download-apps')), findsNothing); // tests run on the VM, not the web
     });
 
     testWidgets('tapping on Driver role card updates selection', (WidgetTester tester) async {
