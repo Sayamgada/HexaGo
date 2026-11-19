@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"sync"
@@ -208,6 +209,30 @@ type Settlement struct {
 
 func rideKey(id string) string { return "ride:" + id }
 
+// maxBalanceRetries bounds how often an operation re-reads balances after a
+// concurrent write moved a guarded account under it (ErrNegativeBalance): with
+// many settlements and top-ups of one rider in flight, a single retry can lose
+// the race again.
+const maxBalanceRetries = 8
+
+// retryBalance reports whether the failed attempt (0-based) should be retried,
+// after a short jittered backoff so contending writers spread out.
+func retryBalance(ctx context.Context, err error, attempt int) bool {
+	if !errors.Is(err, ErrNegativeBalance) || attempt >= maxBalanceRetries {
+		return false
+	}
+	if attempt == 0 {
+		return true // the common case: retry at once
+	}
+	backoff := time.Duration(1+rand.IntN(1<<min(attempt, 5))) * time.Millisecond
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(backoff):
+		return true
+	}
+}
+
 // SettleRide posts the ride's balanced journal entry (idempotency key = ride
 // id) and its payout atomically, then pays out within PayoutDelay unless the
 // driver is under a safety hold. Replaying a ride is a no-op.
@@ -248,7 +273,7 @@ func (l *Ledger) SettleRide(ctx context.Context, r RideInfo) (Settlement, error)
 			return Settlement{}, err
 		}
 		applied, err = l.store.Apply(ctx, c)
-		if errors.Is(err, ErrNegativeBalance) && attempt == 0 {
+		if retryBalance(ctx, err, attempt) {
 			continue // the rider's wallet moved under us: re-split wallet vs card
 		}
 		if err != nil {
@@ -407,7 +432,7 @@ func (l *Ledger) send(ctx context.Context, p Payout, released bool) (Payout, err
 			c.Entry = e
 		}
 		applied, err := l.store.Apply(ctx, c)
-		if errors.Is(err, ErrNegativeBalance) && attempt == 0 {
+		if retryBalance(ctx, err, attempt) {
 			continue
 		}
 		if err != nil {
@@ -632,7 +657,7 @@ func (l *Ledger) Refund(ctx context.Context, in RefundInput) (Entry, error) {
 			Postings:    ps,
 		}
 		applied, err := l.store.Apply(ctx, Commit{Entry: e})
-		if errors.Is(err, ErrNegativeBalance) && attempt == 0 {
+		if retryBalance(ctx, err, attempt) {
 			continue
 		}
 		if err != nil {

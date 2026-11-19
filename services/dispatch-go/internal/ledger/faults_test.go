@@ -170,20 +170,35 @@ func TestStoreErrorsPropagate(t *testing.T) {
 
 func TestRetriesAndLateFailures(t *testing.T) {
 	ctx := context.Background()
-	// A negative-balance race is retried once.
-	l, f, _ := faultyLedger(t, map[string]int{"ApplyNegative": 1})
+	// Negative-balance races are retried (re-reading balances) until they clear.
+	l, f, _ := faultyLedger(t, map[string]int{"ApplyNegative": 3})
 	if _, err := l.SettleRide(ctx, ride("retry")); err != nil {
 		t.Fatalf("settle retry: %v", err)
 	}
-	f.fail["ApplyNegative"] = 1
+	f.fail["ApplyNegative"] = 3
 	if _, err := l.Refund(ctx, RefundInput{RideID: "retry", AmountPaise: 100}); err != nil {
 		t.Fatalf("refund retry: %v", err)
 	}
-	f.fail["ApplyNegative"] = 1
+	f.fail["ApplyNegative"] = 3
 	p, _ := f.Store.Payout(ctx, "po_retry")
 	if _, err := l.send(ctx, p, false); err != nil {
 		t.Fatalf("send retry: %v", err)
 	}
+	// ...but not forever: a balance that never clears surfaces the error.
+	f.fail["ApplyNegative"] = -1
+	if _, err := l.SettleRide(ctx, ride("never")); !errors.Is(err, ErrNegativeBalance) {
+		t.Fatalf("persistent negative balance: %v", err)
+	}
+	// A cancelled context stops the backoff.
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if retryBalance(cctx, ErrNegativeBalance, 1) {
+		t.Fatal("retried after cancellation")
+	}
+	if retryBalance(ctx, errBoom, 0) || !retryBalance(ctx, ErrNegativeBalance, 0) || retryBalance(ctx, ErrNegativeBalance, maxBalanceRetries) {
+		t.Fatal("retryBalance policy")
+	}
+	f.fail["ApplyNegative"] = 0
 	// Refund failures after the original was found.
 	for _, method := range []string{"Entries", "Balance", "Apply"} {
 		l, f, _ := faultyLedger(t, map[string]int{})
