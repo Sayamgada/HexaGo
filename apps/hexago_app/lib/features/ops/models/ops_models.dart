@@ -217,6 +217,12 @@ class AgentEvent {
       case 'settlement_scan':
       case 'settlement_anomaly':
         return FeedCategory.money;
+      case 'safety_signal':
+      case 'safety_decision':
+      case 'safety_call':
+      case 'safety_reasoning':
+      case 'safety_escalation':
+        return FeedCategory.incident;
       case '':
         break;
       default:
@@ -290,6 +296,9 @@ class DispatchMetrics {
     required this.idleDrivers,
     required this.openRequests,
     required this.ridesInProgress,
+    this.matchesToday,
+    this.ridesSettledToday,
+    this.decisionsToday,
   });
 
   final double p50Ms;
@@ -301,6 +310,12 @@ class DispatchMetrics {
   final int openRequests;
   final int ridesInProgress;
 
+  /// Persistent counters since midnight IST (agent_events + ledger on the
+  /// server, so they survive restarts). Null from servers that do not send them.
+  final int? matchesToday;
+  final int? ridesSettledToday;
+  final int? decisionsToday;
+
   factory DispatchMetrics.fromJson(Map<String, dynamic> json) => DispatchMetrics(
         p50Ms: _toDouble(json['p50_ms']),
         p95Ms: _toDouble(json['p95_ms']),
@@ -310,6 +325,9 @@ class DispatchMetrics {
         idleDrivers: _toInt(json['idle_drivers']),
         openRequests: _toInt(json['open_requests']),
         ridesInProgress: _toInt(json['rides_in_progress']),
+        matchesToday: json.containsKey('matches_today') ? _toInt(json['matches_today']) : null,
+        ridesSettledToday: json.containsKey('rides_settled_today') ? _toInt(json['rides_settled_today']) : null,
+        decisionsToday: json.containsKey('decisions_today') ? _toInt(json['decisions_today']) : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -321,6 +339,9 @@ class DispatchMetrics {
         'idle_drivers': idleDrivers,
         'open_requests': openRequests,
         'rides_in_progress': ridesInProgress,
+        'matches_today': ?matchesToday,
+        'rides_settled_today': ?ridesSettledToday,
+        'decisions_today': ?decisionsToday,
       };
 }
 

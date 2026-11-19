@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../theme/hexago_theme.dart';
+import '../../util/errors.dart';
+import '../../widgets/waking_gate.dart';
 import '../money/money_widgets.dart';
 import '../safety/widgets/incident_panel.dart';
 import 'models/ops_models.dart';
 import 'state/ops_providers.dart';
 import 'widgets/agent_feed.dart';
+import 'widgets/agents_grid.dart';
 import 'widgets/fleet_map.dart';
 import 'widgets/metrics_strip.dart';
 import 'widgets/ops_banner.dart';
@@ -22,7 +25,8 @@ class OpsCommandCenterScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
+    return WakingGate(
+      child: Scaffold(
       key: const ValueKey('ops-command-center'),
       backgroundColor: HexaColors.background,
       body: SafeArea(
@@ -66,10 +70,13 @@ class OpsCommandCenterScreen extends ConsumerWidget {
               const SizedBox(height: 520, child: _Feed()),
               const SizedBox(height: 10),
               const SizedBox(height: 520, child: IncidentPanel()),
+              const SizedBox(height: 10),
+              const SizedBox(height: 620, child: AgentsGrid()),
             ],
           );
         }),
       ),
+    ),
     );
   }
 }
@@ -106,24 +113,31 @@ class _Feed extends ConsumerWidget {
   }
 }
 
-/// Wide layout's right column: the agent feed and the safety incident panel.
+/// Wide layout's right column: the agent feed, the safety incident panel and
+/// the agent roster.
 class _SidePanel extends StatelessWidget {
   const _SidePanel();
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(children: [
         const TabBar(
           key: ValueKey('ops-side-tabs'),
           tabs: [
             Tab(key: ValueKey('tab-feed'), height: 36, text: 'Agent feed'),
             Tab(key: ValueKey('tab-safety'), height: 36, text: 'Safety'),
+            Tab(key: ValueKey('tab-agents'), height: 36, text: 'Agents'),
           ],
         ),
         const SizedBox(height: 8),
-        const Expanded(child: TabBarView(physics: NeverScrollableScrollPhysics(), children: [_Feed(), IncidentPanel()])),
+        const Expanded(
+          child: TabBarView(
+            physics: NeverScrollableScrollPhysics(),
+            children: [_Feed(), IncidentPanel(), AgentsGrid()],
+          ),
+        ),
       ]),
     );
   }
@@ -143,9 +157,10 @@ class _Scenarios extends ConsumerWidget {
           duration: const Duration(seconds: 2),
         ));
       } catch (e) {
+        if (context.mounted && WakingGate.report(context, e)) return;
         messenger.showSnackBar(SnackBar(
           backgroundColor: HexaColors.bad,
-          content: Text('Could not start ${s.label}: $e'),
+          content: Text(friendlyError(e, action: 'start ${s.label}')),
         ));
       }
     });

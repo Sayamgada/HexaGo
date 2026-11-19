@@ -42,7 +42,12 @@ class MetricsStrip extends StatelessWidget {
         icon: Icons.speed,
         valueColor: m == null ? null : latencyColor(m.p99Ms),
       ),
-      MetricTile(id: 'matches', label: 'Total matches', value: count(m?.matchesTotal), icon: Icons.handshake),
+      MetricTile(
+        id: 'matches',
+        label: 'Matches today',
+        value: count(m == null ? null : (m.matchesToday ?? m.matchesTotal)),
+        icon: Icons.handshake,
+      ),
     ];
 
     return LayoutBuilder(builder: (context, c) {

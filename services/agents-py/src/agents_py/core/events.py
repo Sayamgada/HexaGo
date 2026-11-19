@@ -173,13 +173,21 @@ class EventStore:
                 log.warning("publish ops event failed: %s", err)
         return _public(event)
 
-    async def recent(self, limit: int = 50, agent: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def recent(self, limit: int = 50, agent: Optional[str] = None,
+                     per_agent: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Newest first. `per_agent` keeps at most that many events per agent (from the last day), so
+        a chatty agent cannot crowd the others out of a mixed feed."""
         limit = max(1, min(int(limit), RING_SIZE))
         wanted = agent_id(agent) if agent else None
         if self.pool is not None:
             try:
                 await self._ensure_schema()
-                if wanted:
+                if per_agent and not wanted:
+                    rows = await self.pool.fetch(
+                        f"SELECT {_COLUMNS} FROM (SELECT *, row_number() OVER (PARTITION BY agent ORDER BY id DESC) "
+                        "AS rn FROM agent_events WHERE created_at >= $1) t WHERE rn <= $2 ORDER BY id DESC LIMIT $3",
+                        self.clock() - dt.timedelta(days=1), int(per_agent), limit)
+                elif wanted:
                     rows = await self.pool.fetch(
                         f"SELECT {_COLUMNS} FROM agent_events WHERE agent = $1 ORDER BY id DESC LIMIT $2",
                         wanted, limit)
@@ -190,6 +198,14 @@ class EventStore:
             except Exception as err:  # noqa: BLE001
                 log.warning("read agent_events failed (serving memory): %s", err)
         out = [e for e in self.ring if wanted is None or e["agent"] == wanted]
+        if per_agent and not wanted:
+            seen: Dict[str, int] = {}
+            capped = []
+            for e in out:
+                seen[e["agent"]] = seen.get(e["agent"], 0) + 1
+                if seen[e["agent"]] <= per_agent:
+                    capped.append(e)
+            out = capped
         return [_public(e) for e in out[:limit]]
 
     async def agent_stats(self, since: dt.datetime) -> Dict[str, Dict[str, Any]]:

@@ -48,6 +48,21 @@ String displayAgentName(String agent) {
   return agent.split('_').where((p) => p.isNotEmpty).map((p) => p[0].toUpperCase() + p.substring(1)).join(' ');
 }
 
+/// The 11 roster agents (PROJECT_CONTEXT.md section 3): wire id and display name.
+const kRosterAgents = <(String, String)>[
+  ('booking_intent', 'Booking Intent'),
+  ('dispatch_broker', 'Dispatch Broker'),
+  ('pool_batching', 'Pool Batching'),
+  ('surge_equilibrium', 'Surge Equilibrium'),
+  ('demand_forecast', 'Demand Forecast'),
+  ('safety_sentinel', 'Safety Sentinel'),
+  ('compliance_vision', 'Compliance Vision'),
+  ('legal_jurisdiction', 'Legal & Jurisdiction'),
+  ('settlement', 'Settlement'),
+  ('support_dispute', 'Support & Dispute'),
+  ('ops_supervisor', 'Ops Supervisor'),
+];
+
 /// Feed filter chips.
 enum FeedFilter {
   all('All', null, 'No agent decisions yet'),
@@ -77,11 +92,28 @@ class AgentFeed extends StatefulWidget {
 class _AgentFeedState extends State<AgentFeed> {
   FeedFilter _filter = FeedFilter.all;
 
+  /// Roster agent id whose events alone are shown (null: every agent).
+  String? _agent;
+
+  bool _accepts(AgentEvent e) =>
+      _filter.accepts(e) && (_agent == null || AgentStyle.keyFor(e.agent) == AgentStyle.keyFor(_agent!));
+
+  String get _emptyText {
+    if (_agent == null) return _filter.emptyText;
+    final name = kRosterAgents.firstWhere((a) => a.$1 == _agent, orElse: () => (_agent!, _agent!)).$2;
+    return 'No ${_filter == FeedFilter.all ? '' : '${_filter.label.toLowerCase()} '}decisions from $name yet';
+  }
+
   @override
   Widget build(BuildContext context) {
     final events = widget.events;
     final totalSeen = widget.totalSeen;
-    final shown = _filter == FeedFilter.all ? events : events.where(_filter.accepts).toList();
+    final shown = _filter == FeedFilter.all && _agent == null ? events : events.where(_accepts).toList();
+    final perAgent = <String, int>{};
+    for (final e in events) {
+      final k = AgentStyle.keyFor(e.agent);
+      perAgent[k] = (perAgent[k] ?? 0) + 1;
+    }
     return Container(
       decoration: BoxDecoration(
         color: HexaColors.surface,
@@ -119,6 +151,27 @@ class _AgentFeedState extends State<AgentFeed> {
                 ),
             ]),
           ),
+          SizedBox(
+            height: 34,
+            child: ListView(
+              key: const ValueKey('feed-agent-chips'),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              children: [
+                for (final (id, name) in kRosterAgents)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _AgentChip(
+                      id: id,
+                      name: name,
+                      count: perAgent[AgentStyle.keyFor(id)] ?? 0,
+                      selected: _agent == id,
+                      onTap: () => setState(() => _agent = _agent == id ? null : id),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           const Divider(height: 1),
           Expanded(
             child: events.isEmpty
@@ -126,7 +179,15 @@ class _AgentFeedState extends State<AgentFeed> {
                     child: Text('Waiting for agent decisions…', style: TextStyle(color: HexaColors.textMuted)),
                   )
                 : shown.isEmpty
-                    ? Center(child: Text(_filter.emptyText, style: const TextStyle(color: HexaColors.textMuted)))
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(_emptyText,
+                              key: const ValueKey('feed-empty'),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: HexaColors.textMuted)),
+                        ),
+                      )
                     : ListView.builder(
                         key: const ValueKey('agent-feed-list'),
                         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -136,6 +197,39 @@ class _AgentFeedState extends State<AgentFeed> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// One agent's filter chip: its colour and icon, short name and how many of
+/// its events the feed holds. Tapping it again clears the filter.
+class _AgentChip extends StatelessWidget {
+  const _AgentChip({required this.id, required this.name, required this.count, required this.selected, required this.onTap});
+
+  final String id;
+  final String name;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AgentStyle.of(id);
+    final dim = count == 0 && !selected;
+    return FilterChip(
+      key: ValueKey('feed-agent-$id'),
+      tooltip: name,
+      avatar: Icon(style.icon, size: 13, color: dim ? HexaColors.textMuted : style.color),
+      label: Text(count == 0 ? name : '$name $count',
+          style: TextStyle(fontSize: 10.5, color: dim ? HexaColors.textMuted : null)),
+      selected: selected,
+      showCheckmark: false,
+      selectedColor: style.color.withValues(alpha: 0.22),
+      side: BorderSide(color: selected ? style.color : HexaColors.border),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      onSelected: (_) => onTap(),
     );
   }
 }

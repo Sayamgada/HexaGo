@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/app_config.dart';
+import '../../platform/state/platform_providers.dart';
 import '../data/basemap.dart';
 import '../data/live_ops_source.dart';
 import '../data/mock_ops_source.dart';
@@ -97,17 +98,42 @@ class AgentFeedNotifier extends Notifier<FeedState> {
   final List<AgentEvent> _pending = [];
   Timer? _flush;
 
+  bool _disposed = false;
+
   @override
   FeedState build() {
     final source = ref.watch(opsSourceProvider);
     final sub = source.agentEvents.listen(_onEvent);
+    _disposed = false;
     ref.onDispose(() {
+      _disposed = true;
       sub.cancel();
       _flush?.cancel();
       _flush = null;
       _pending.clear();
     });
+    unawaited(_seed());
     return const FeedState();
+  }
+
+  /// Fills the feed with recent decisions of every agent (at most a few per
+  /// agent, so the busy Dispatch Broker cannot crowd out the others) below
+  /// the live events.
+  Future<void> _seed() async {
+    final List<AgentEvent> history;
+    try {
+      history = await ref.read(platformApiProvider).recentEvents(limit: 80, perAgent: 8);
+    } catch (_) {
+      return; // agents-py asleep: the live stream fills the feed
+    }
+    if (_disposed || history.isEmpty) return;
+    final have = {for (final e in state.events) e.id};
+    final older = [for (final e in history) if (!have.contains(e.id)) e]..sort((a, b) => b.ts.compareTo(a.ts));
+    final merged = [...state.events, ...older];
+    state = FeedState(
+      events: merged.length > maxEvents ? merged.sublist(0, maxEvents) : merged,
+      totalSeen: state.totalSeen + older.length,
+    );
   }
 
   void _onEvent(AgentEvent e) {
@@ -130,9 +156,12 @@ class AgentFeedNotifier extends Notifier<FeedState> {
 
 final agentFeedProvider = NotifierProvider.autoDispose<AgentFeedNotifier, FeedState>(AgentFeedNotifier.new);
 
-/// Autonomous decisions today = rider/driver matches (from the dispatch
-/// counter) + agent decisions streamed during this session.
+/// Autonomous decisions today: the server's persistent count (every row in
+/// agent_events since midnight IST, so it survives restarts). Servers without
+/// it (and the offline mock) fall back to matches + events seen this session.
 final decisionsTodayProvider = Provider.autoDispose<int>((ref) {
+  final persisted = ref.watch(metricsProvider.select((m) => m?.decisionsToday));
+  if (persisted != null) return persisted;
   final matches = ref.watch(metricsProvider.select((m) => m?.matchesTotal ?? 0));
   final events = ref.watch(agentFeedProvider.select((f) => f.totalSeen));
   return matches + events;

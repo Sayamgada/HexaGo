@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/hexago_theme.dart';
 import '../../../util/format.dart';
+import '../../../widgets/hexago_logo.dart';
 import '../../../widgets/hexagon.dart';
 import '../models/ops_models.dart';
 
@@ -41,11 +42,7 @@ class ZeroHumansBanner extends StatelessWidget {
                   onPressed: onBack,
                   icon: const Icon(Icons.arrow_back, size: 20),
                 ),
-              const HexBadge(
-                size: 34,
-                color: HexaColors.amber,
-                child: Text('0', style: TextStyle(fontWeight: FontWeight.w900, color: HexaColors.amber)),
-              ),
+              const HexaGoLogo(size: 34),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

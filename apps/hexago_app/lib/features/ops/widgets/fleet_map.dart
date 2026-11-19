@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import '../../../config/app_config.dart';
 import '../../../theme/hexago_theme.dart';
 import '../../../widgets/hexagon.dart';
+import '../../platform/widgets/surge_layer.dart';
 import '../data/basemap.dart';
 import '../models/ops_models.dart';
 import '../state/fleet_tracker.dart';
@@ -120,6 +121,7 @@ class _FleetMapState extends ConsumerState<FleetMap> {
                   userAgentPackageName: 'com.hexago.hexago_app',
                   maxZoom: 19,
                 ),
+              const SurgeZonesLayer(),
               const FleetLayer(),
               if (basemap != null)
                 SimpleAttributionWidget(
@@ -300,6 +302,7 @@ class _Legend extends StatelessWidget {
         item(HexaColors.incident, 'Incident'),
         item(HexaColors.offline, 'Offline'),
         item(Colors.transparent, 'Autonomous (AV)', av: true),
+        const SurgeToggle(),
       ]),
     );
   }

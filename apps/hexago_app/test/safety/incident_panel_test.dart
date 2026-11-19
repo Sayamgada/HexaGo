@@ -177,7 +177,7 @@ void main() {
   testWidgets('detail loader shows an error when the incident cannot load', (tester) async {
     await tester.pumpWidget(_wrap(const IncidentDetailLoader(incidentId: 'x'), api: _BrokenApi()));
     await tester.pump();
-    expect(find.textContaining('Could not load incident'), findsOneWidget);
+    expect(find.textContaining('Could not load the incident'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -210,3 +210,24 @@ def test_dispatch_go_structured_rows_are_summarised():
 
     other = ev._from_row(_struct_row("scenario", {"name": "rush_hour"}, ride_id=None))
     assert other["decision"] == "scenario" and other["reasoning"] == '{"name": "rush_hour"}'
+
+
+async def test_recent_per_agent_caps_chatty_agents():
+    store = ev.EventStore(pool=None, redis=None, clock=lambda: TS)
+    for i in range(5):
+        await store.record_event("dispatch_broker", "", f"m{i}", "", 1, 0, False)
+    await store.record_event("settlement", "", "scan", "", 1, 0, False)
+    out = await store.recent(limit=10, per_agent=2)
+    assert [e["decision"] for e in out] == ["scan", "m4", "m3"]
+    assert len(await store.recent(limit=10)) == 6
+
+    seen = {}
+
+    def handler(sql, args):
+        seen["sql"], seen["args"] = sql, args
+        return [_db_row(3, agent="settlement")]
+
+    db = ev.EventStore(pool=FakePool(handler), redis=None, clock=lambda: TS)
+    rows = await db.recent(limit=40, per_agent=8)
+    assert rows[0]["agent"] == "settlement" and "PARTITION BY agent" in seen["sql"]
+    assert seen["args"] == (TS - dt.timedelta(days=1), 8, 40)

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/app_config.dart';
 import '../../theme/hexago_theme.dart';
+import '../../util/errors.dart';
+import '../../widgets/waking_gate.dart';
 import '../safety/state/safety_providers.dart' show voiceProvider;
 import '../safety/voice/voice_io.dart';
 import 'data/booking_api.dart';
@@ -39,7 +41,7 @@ class _Note extends _Item {
 /// Rider module (route `/rider`): persona picker, a big chat / voice box for
 /// the whole plan, the plan timeline with Edit / Confirm, then the scheduled
 /// legs and a live map of each leg once dispatch-go dispatches it.
-class RiderScreen extends ConsumerStatefulWidget {
+class RiderScreen extends StatelessWidget {
   const RiderScreen({
     super.key,
     this.initialPersonaId,
@@ -53,11 +55,33 @@ class RiderScreen extends ConsumerStatefulWidget {
   final bool showLiveMap;
   final DateTime Function()? now;
 
+  /// Waits for agents-py too: the Booking Intent agent plans every trip.
   @override
-  ConsumerState<RiderScreen> createState() => _RiderScreenState();
+  Widget build(BuildContext context) => WakingGate(
+        needsAgents: true,
+        child: RiderBody(initialPersonaId: initialPersonaId, pollEvery: pollEvery, showLiveMap: showLiveMap, now: now),
+      );
 }
 
-class _RiderScreenState extends ConsumerState<RiderScreen> {
+class RiderBody extends ConsumerStatefulWidget {
+  const RiderBody({
+    super.key,
+    this.initialPersonaId,
+    this.pollEvery = const Duration(seconds: 3),
+    this.showLiveMap = true,
+    this.now,
+  });
+
+  final String? initialPersonaId;
+  final Duration pollEvery;
+  final bool showLiveMap;
+  final DateTime Function()? now;
+
+  @override
+  ConsumerState<RiderBody> createState() => _RiderScreenState();
+}
+
+class _RiderScreenState extends ConsumerState<RiderBody> {
   late final BookingApi _api;
   late final VoiceIO _voice;
   final _text = TextEditingController();
@@ -113,7 +137,8 @@ class _RiderScreenState extends ConsumerState<RiderScreen> {
         _persona = list.where((p) => p.id == widget.initialPersonaId).firstOrNull;
       });
     } catch (e) {
-      if (mounted) setState(() => _loadError = 'Could not reach HexaGo: $e');
+      if (!mounted || WakingGate.report(context, e)) return;
+      setState(() => _loadError = friendlyError(e));
     }
   }
 
@@ -156,7 +181,9 @@ class _RiderScreenState extends ConsumerState<RiderScreen> {
         }
       });
     } catch (e) {
-      if (mounted) setState(() => _items.add(_Note('Planning failed: $e', error: true)));
+      if (mounted && !WakingGate.report(context, e)) {
+        setState(() => _items.add(_Note(friendlyError(e, action: 'plan the trip'), error: true)));
+      }
     } finally {
       _clock?.cancel();
       if (mounted) setState(() => _planning = false);
@@ -193,7 +220,7 @@ class _RiderScreenState extends ConsumerState<RiderScreen> {
       _poll?.cancel();
       _poll = Timer.periodic(widget.pollEvery, (_) => _refreshScheduled());
     } catch (e) {
-      if (mounted) setState(() => _items.add(_Note('Could not schedule the rides: $e', error: true)));
+      if (mounted) setState(() => _items.add(_Note(friendlyError(e, action: 'schedule the rides'), error: true)));
     } finally {
       if (mounted) setState(() => _confirmingPlan = null);
       _scrollDown();

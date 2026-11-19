@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../theme/hexago_theme.dart';
+import '../../util/errors.dart';
+import '../../widgets/waking_gate.dart';
 import 'data/safety_api.dart';
 import 'models/safety_models.dart';
 import 'state/safety_providers.dart';
@@ -18,8 +20,35 @@ enum CallPhase { loading, ringing, sending, safe, help, timedOut, closed, error 
 /// (speech_to_text, where the browser/OS supports it) or by typing - the text
 /// box and the quick replies are always there. A countdown shows how long is
 /// left before the Safety Sentinel escalates on its own.
-class SafetyCallScreen extends ConsumerStatefulWidget {
+class SafetyCallScreen extends StatelessWidget {
   const SafetyCallScreen({
+    super.key,
+    required this.checkinId,
+    this.compact = false,
+    this.onClose,
+    this.now,
+    this.tick = const Duration(milliseconds: 250),
+    this.pollEvery = const Duration(seconds: 2),
+  });
+
+  final String checkinId;
+  final bool compact;
+  final VoidCallback? onClose;
+  final DateTime Function()? now;
+  final Duration tick;
+  final Duration pollEvery;
+
+  /// The check-in lives in agents-py (Safety Sentinel), so wait for it too.
+  @override
+  Widget build(BuildContext context) => WakingGate(
+        needsAgents: true,
+        child: SafetyCallBody(
+            checkinId: checkinId, compact: compact, onClose: onClose, now: now, tick: tick, pollEvery: pollEvery),
+      );
+}
+
+class SafetyCallBody extends ConsumerStatefulWidget {
+  const SafetyCallBody({
     super.key,
     required this.checkinId,
     this.compact = false,
@@ -39,10 +68,10 @@ class SafetyCallScreen extends ConsumerStatefulWidget {
   final Duration pollEvery;
 
   @override
-  ConsumerState<SafetyCallScreen> createState() => _SafetyCallScreenState();
+  ConsumerState<SafetyCallBody> createState() => _SafetyCallScreenState();
 }
 
-class _SafetyCallScreenState extends ConsumerState<SafetyCallScreen> {
+class _SafetyCallScreenState extends ConsumerState<SafetyCallBody> {
   late final SafetyApi _api;
   late final VoiceIO _voice;
   final _text = TextEditingController();
@@ -101,10 +130,10 @@ class _SafetyCallScreenState extends ConsumerState<SafetyCallScreen> {
       final ok = await _voice.initSpeech();
       if (mounted) setState(() => _canListen = ok);
     } catch (e) {
-      if (mounted) {
+      if (mounted && !WakingGate.report(context, e)) {
         setState(() {
           _phase = CallPhase.error;
-          _error = 'Could not reach HexaGo Safety: $e';
+          _error = friendlyError(e, action: 'reach HexaGo Safety');
         });
       }
     }
@@ -180,7 +209,7 @@ class _SafetyCallScreenState extends ConsumerState<SafetyCallScreen> {
       if (!mounted) return;
       setState(() {
         _phase = CallPhase.ringing;
-        _error = 'Could not send your answer, please try again ($e)';
+        _error = friendlyError(e, action: 'send your answer');
       });
       _ticker = Timer.periodic(widget.tick, (_) => _onTick());
     }

@@ -69,6 +69,7 @@ AgentEvent sampleEvent({
   String tier = '',
   String requestedTier = '',
   bool upgraded = false,
+  DateTime? ts,
 }) =>
     AgentEvent(
       id: id,
@@ -84,5 +85,5 @@ AgentEvent sampleEvent({
       confidence: confidence,
       latencyMs: latencyMs,
       usedFallback: usedFallback,
-      ts: DateTime.utc(2026, 11, 16, 9, 30, 0),
+      ts: ts ?? DateTime.utc(2026, 11, 16, 9, 30, 0),
     );

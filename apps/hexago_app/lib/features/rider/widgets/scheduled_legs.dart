@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import '../../../theme/hexago_theme.dart';
 import '../../ops/data/basemap.dart';
 import '../../ops/state/ops_providers.dart' show basemapProvider, showMapTilesProvider;
+import '../../platform/widgets/surge_layer.dart';
 import '../models/booking_models.dart';
 
 String legStatusLabel(ScheduledLeg l, DateTime now) {
@@ -133,7 +134,8 @@ class _LiveRideMapState extends ConsumerState<LiveRideMap> {
         borderRadius: BorderRadius.circular(10),
         child: SizedBox(
           height: 260,
-          child: FlutterMap(
+          child: Stack(children: [
+            Positioned.fill(child: FlutterMap(
             mapController: _map,
             options: MapOptions(
               initialCenter: LatLng((pickup.latitude + drop.latitude) / 2, (pickup.longitude + drop.longitude) / 2),
@@ -151,6 +153,7 @@ class _LiveRideMapState extends ConsumerState<LiveRideMap> {
                   tileBuilder: basemap.darkFilter ? darkModeTileBuilder : null,
                   userAgentPackageName: 'com.hexago.app',
                 ),
+              const SurgeZonesLayer(),
               PolylineLayer(polylines: [Polyline(points: [pickup, drop], color: HexaColors.amber, strokeWidth: 3)]),
               MarkerLayer(markers: [
                 Marker(point: pickup, child: const Icon(Icons.trip_origin, color: HexaColors.good)),
@@ -160,7 +163,17 @@ class _LiveRideMapState extends ConsumerState<LiveRideMap> {
               ]),
               if (basemap != null) SimpleAttributionWidget(source: Text(basemap.attribution)),
             ],
-          ),
+            )),
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(color: const Color(0xCC0B0F17), borderRadius: BorderRadius.circular(6)),
+                child: const SurgeToggle(),
+              ),
+            ),
+          ]),
         ),
       ),
     ]);

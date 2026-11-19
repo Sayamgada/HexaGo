@@ -30,6 +30,7 @@ class LedgerSummary {
     required this.heldPaise,
     required this.platformRevenuePaise,
     required this.ridesSettled,
+    this.ridesSettledToday,
     this.store = '',
   });
 
@@ -41,6 +42,9 @@ class LedgerSummary {
   final int heldPaise;
   final int platformRevenuePaise;
   final int ridesSettled;
+
+  /// Distinct rides settled since midnight IST (null from older servers).
+  final int? ridesSettledToday;
   final String store;
 
   factory LedgerSummary.fromJson(Map<String, dynamic> j) {
@@ -55,6 +59,7 @@ class LedgerSummary {
       heldPaise: _int(p['held_paise']),
       platformRevenuePaise: _int(j['platform_revenue_paise']),
       ridesSettled: _int(j['rides_settled']),
+      ridesSettledToday: j.containsKey('rides_settled_today') ? _int(j['rides_settled_today']) : null,
       store: _str(j['store']),
     );
   }

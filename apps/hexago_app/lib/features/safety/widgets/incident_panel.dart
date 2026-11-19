@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import '../../../theme/hexago_theme.dart';
+import '../../../util/errors.dart';
 import '../../../util/format.dart';
 import '../../ops/state/ops_providers.dart';
 import '../data/safety_api.dart';
@@ -293,7 +294,7 @@ class _IncidentDetailLoaderState extends ConsumerState<IncidentDetailLoader> {
       final d = await _api.getIncident(widget.incidentId);
       if (mounted) setState(() => (_detail = d, _error = null));
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not load incident: $e');
+      if (mounted) setState(() => _error = friendlyError(e, action: 'load the incident'));
     }
   }
 

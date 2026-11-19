@@ -116,7 +116,11 @@ class _MoneyTileState extends ConsumerState<MoneyTile> {
             color: held > 0 ? HexaColors.warn : null,
           ),
           _Figure(id: 'revenue', label: 'Platform revenue', value: s == null ? '—' : formatRupees(s.platformRevenuePaise)),
-          _Figure(id: 'rides', label: 'Rides settled', value: s == null ? '—' : formatCount(s.ridesSettled)),
+          _Figure(
+            id: 'rides',
+            label: s?.ridesSettledToday == null ? 'Rides settled' : 'Rides settled today',
+            value: s == null ? '—' : formatCount(s.ridesSettledToday ?? s.ridesSettled),
+          ),
         ],
       ),
     );

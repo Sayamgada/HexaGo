@@ -128,7 +128,8 @@ void main() {
     await tester.tap(find.byKey(const Key('booking-send')));
     await tester.pump();
     await tester.pump();
-    expect(find.textContaining('Planning failed'), findsOneWidget);
+    expect(find.textContaining('Could not plan the trip'), findsOneWidget);
+    expect(find.textContaining('gateway asleep'), findsNothing, reason: 'never the raw exception');
 
     api.parseError = null;
     api.confirmError = Exception('scheduler down');

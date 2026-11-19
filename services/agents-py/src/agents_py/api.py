@@ -25,9 +25,10 @@ async def list_agents():
 
 
 @router.get("/v1/agents/events")
-async def agent_events(limit: int = Query(50, ge=1, le=500), agent: Optional[str] = None):
+async def agent_events(limit: int = Query(50, ge=1, le=500), agent: Optional[str] = None,
+                       per_agent: Optional[int] = Query(None, ge=1, le=100)):
     store = await get_event_store()
-    events = await store.recent(limit=limit, agent=agent or None)
+    events = await store.recent(limit=limit, agent=agent or None, per_agent=per_agent)
     return {"events": events, "count": len(events), "backend": store.backend}
 
 

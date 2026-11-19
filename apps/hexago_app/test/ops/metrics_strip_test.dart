@@ -19,7 +19,7 @@ void main() {
     await tester.pumpWidget(_host(sampleMetrics));
 
     for (final label in [
-      'Active drivers', 'Idle', 'Open requests', 'Rides in progress', 'Match p50', 'Match p99', 'Total matches',
+      'Active drivers', 'Idle', 'Open requests', 'Rides in progress', 'Match p50', 'Match p99', 'Matches today',
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
