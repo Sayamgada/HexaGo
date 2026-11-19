@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     SETTLEMENT_SCAN_INTERVAL_S: float = 60.0
     # Surge Equilibrium surge-map recompute period; 0 disables the loop (the endpoint still computes on demand).
     SURGE_MAP_INTERVAL_S: float = 30.0
+    # Demand Forecast: on/off switch and recompute period (0 disables the loop; the endpoint still computes on demand).
+    FORECAST_ENABLED: bool = True
+    FORECAST_INTERVAL_S: float = 60.0
 
     # The jurisdiction the surge map and fare quotes are priced in (a Legal & Jurisdiction city key).
     CITY_NAME: str = "Bengaluru"

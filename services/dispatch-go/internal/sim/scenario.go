@@ -206,7 +206,7 @@ func (s *Sim) logOff(share float64, until time.Time) int {
 	defer s.mu.Unlock()
 	n := 0
 	for _, d := range s.order {
-		if d.ride != nil || d.incident != nil || s.rng.Float64() >= share {
+		if d.ride != nil || d.incident != nil || s.humanLocked(d.id) || s.rng.Float64() >= share {
 			continue
 		}
 		d.offlineUntil = until

@@ -296,6 +296,77 @@ def check_ops_report(ctx: Ctx) -> str:
             f"auto-actions, {rep.get('human_interventions', 0)} human interventions")
 
 
+def check_forecast_heatmap(ctx: Ctx) -> str:
+    m = ok_json(ctx.get("/v1/forecast/heatmap?horizon=15", timeout=90))
+    cells = m.get("cells") or []
+    expect(cells, f"no cells (source {m.get('source')})")
+    top = max(cells, key=lambda c: c.get("expected_earnings_per_hr", 0))
+    expect(top.get("boundary") and top.get("explanation"), f"cell without boundary or explanation: {top.get('h3')}")
+    return (f"{len(cells)} cells at +15 min from {m.get('source')}, "
+            f"top ₹{top.get('expected_earnings_per_hr')}/h ({top.get('explanation_source')})")
+
+
+def _release(ctx: Ctx, driver_id: str) -> None:
+    ctx.http("DELETE", f"{ctx.gateway}/v1/drivers/{driver_id}/takeover")
+
+
+def _take_over_with_ride(ctx: Ctx) -> tuple[str, str]:
+    """Take over an idle driver and send it a demo ride; returns (driver id, ride id)."""
+    rows = ok_json(ctx.get("/v1/drivers")).get("drivers") or []
+    idle = [d["id"] for d in rows if d.get("status") == "idle" and not d.get("suspended")]
+    expect(idle, "no idle driver to take over")
+    for driver_id in idle[:5]:
+        view = ok_json(ctx.post(f"/v1/drivers/{driver_id}/takeover"))
+        expect(view.get("human_controlled"), f"take-over of {driver_id} not active: {view}")
+        r = ctx.post(f"/v1/drivers/{driver_id}/send-ride")
+        if r.status == 201:
+            return driver_id, r.json()["ride"]["id"]
+        _release(ctx, driver_id)
+        expect(r.status == 409, f"send-ride HTTP {r.status}: {r.body[:160]!r}")
+    raise CheckFailed("every idle driver got a ride before send-ride")
+
+
+def _await_offer(ctx: Ctx, driver_id: str, ride_id: str) -> dict:
+    def offered() -> dict | None:
+        o = ok_json(ctx.get(f"/v1/drivers/{driver_id}/takeover")).get("offer") or {}
+        return o if o.get("ride_id") == ride_id else None
+
+    o = ctx.poll(offered, 10, every=1)
+    expect(o, f"no offer of ride {ride_id[:8]} to {driver_id} within 10 s")
+    return o
+
+
+def check_takeover_accept(ctx: Ctx) -> str:
+    driver_id, ride_id = _take_over_with_ride(ctx)
+    try:
+        o = _await_offer(ctx, driver_id, ride_id)
+        res = ok_json(ctx.post(f"/v1/rides/{ride_id}/offer/accept"))
+        expect(res.get("decision") == "accepted", f"accept: {res}")
+
+        def driving() -> dict | None:
+            r = ok_json(ctx.get(f"/v1/drivers/{driver_id}")).get("ride") or {}
+            return r if r.get("id") == ride_id else None
+
+        r = ctx.poll(driving, 15, every=1)
+        expect(r, f"{driver_id} is not driving ride {ride_id[:8]} after accepting it")
+        return (f"{driver_id} accepted {ride_id[:8]} (₹{o.get('fare_inr', 0):.0f}, pickup in "
+                f"{o.get('pickup_eta_sec')} s) -> {r.get('status')}")
+    finally:
+        _release(ctx, driver_id)
+
+
+def check_takeover_decline(ctx: Ctx) -> str:
+    driver_id, ride_id = _take_over_with_ride(ctx)
+    try:
+        _await_offer(ctx, driver_id, ride_id)
+        res = ok_json(ctx.post(f"/v1/rides/{ride_id}/offer/decline"))
+        to = res.get("rematched_to")
+        expect(res.get("decision") == "declined" and to and to != driver_id, f"decline not re-matched: {res}")
+        return f"{driver_id} declined {ride_id[:8]} -> re-matched to {to}"
+    finally:
+        _release(ctx, driver_id)
+
+
 def check_safety(ctx: Ctx) -> str:
     sc = ok_json(ctx.post("/v1/sim/scenario/safety_incident"))
     ride_id = sc.get("ride_id")
@@ -374,6 +445,9 @@ CHECKS: list[tuple[str, Callable[[Ctx], str]]] = [
     ("booking: golden, force_fallback", check_booking_fallback),
     ("pricing quote", check_pricing_quote),
     ("surge map", check_surge_map),
+    ("forecast heatmap returns cells", check_forecast_heatmap),
+    ("take-over: send ride -> accept", check_takeover_accept),
+    ("take-over: decline -> re-matched", check_takeover_decline),
     ("legal: 1.5x cap ingested -> surge map capped", check_legal_surge_cap),
     ("ops report generates", check_ops_report),
     ("safety incident", check_safety),

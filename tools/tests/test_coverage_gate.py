@@ -48,6 +48,13 @@ def test_go_package_prefix_does_not_match_sibling():
     assert geo.statements == 10  # internal/geopolitics excluded
 
 
+def test_go_coverage_gates_single_files():
+    (f,) = cg.go_coverage(PROFILE, MOD, ["internal/fleet/fleet.go"], 96)
+    assert (f.statements, f.covered) == (100, 96) and f.status == "pass"
+    (missing,) = cg.go_coverage(PROFILE, MOD, ["internal/fleet/other.go"], 96)
+    assert missing.status == "pending"
+
+
 def test_python_coverage_matches_via_source_path():
     (core,) = cg.python_coverage(COBERTURA, ["src/agents_py/core"], 96)
     assert (core.statements, core.covered) == (4, 3)

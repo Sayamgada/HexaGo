@@ -405,6 +405,83 @@ def test_api_key_failures_still_revoke(routes, msg):
     assert gw.calls[-1][:2] == ("DELETE", "/v1/developer/keys/me")
 
 
+def test_forecast_heatmap():
+    cell = {"h3": "a", "boundary": [[1, 2]], "explanation": "x", "expected_earnings_per_hr": 412,
+            "explanation_source": "llm"}
+    c, gw = ctx_for({("GET", "/v1/forecast/heatmap*"): resp(body={"cells": [cell, {"expected_earnings_per_hr": 1}],
+                                                                  "source": "postgres"})})
+    assert smoke.check_forecast_heatmap(c) == "2 cells at +15 min from postgres, top ₹412/h (llm)"
+    assert gw.calls[0][1] == "/v1/forecast/heatmap?horizon=15"
+    c, _ = ctx_for({("GET", "/v1/forecast/heatmap*"): resp(body={"cells": [], "source": "none"})})
+    with pytest.raises(CheckFailed, match="no cells"):
+        smoke.check_forecast_heatmap(c)
+    c, _ = ctx_for({("GET", "/v1/forecast/heatmap*"): resp(body={"cells": [{"h3": "b"}]})})
+    with pytest.raises(CheckFailed, match="without boundary"):
+        smoke.check_forecast_heatmap(c)
+
+
+def takeover_routes(send=None, offer=True, decision=None, ride=True):
+    drivers = {"drivers": [{"id": "d_001", "status": "on_trip"}, {"id": "d_002", "status": "idle"},
+                           {"id": "d_003", "status": "idle"}]}
+    o = {"ride_id": "ride-1234-x", "fare_inr": 214, "pickup_eta_sec": 90} if offer else None
+    return {
+        ("GET", "/v1/drivers"): resp(body=drivers),
+        ("POST", "/v1/drivers/d_002/takeover"): resp(body={"human_controlled": True}),
+        ("POST", "/v1/drivers/d_003/takeover"): resp(body={"human_controlled": True}),
+        ("POST", "/v1/drivers/d_002/send-ride"): send or resp(409, {"error": "busy"}),
+        ("POST", "/v1/drivers/d_003/send-ride"): resp(201, {"ride": {"id": "ride-1234-x"}}),
+        ("GET", "/v1/drivers/d_003/takeover"): resp(body={"offer": o}),
+        ("POST", "/v1/rides/ride-1234-x/offer/accept"): resp(body=decision or {"decision": "accepted"}),
+        ("POST", "/v1/rides/ride-1234-x/offer/decline"): resp(body=decision or {"decision": "declined",
+                                                                                 "rematched_to": "d_077"}),
+        ("GET", "/v1/drivers/d_003"): resp(body={"ride": {"id": "ride-1234-x", "status": "accepted"} if ride else None}),
+        ("DELETE", "/v1/drivers/d_002/takeover"): resp(body={}),
+        ("DELETE", "/v1/drivers/d_003/takeover"): resp(body={}),
+    }
+
+
+def _released(gw, driver):
+    return ("DELETE", f"/v1/drivers/{driver}/takeover") in [(m, p) for m, p, *_ in gw.calls]
+
+
+def test_takeover_accept_skips_a_busy_driver_and_releases():
+    c, gw = ctx_for(takeover_routes())
+    assert smoke.check_takeover_accept(c) == "d_003 accepted ride-123 (₹214, pickup in 90 s) -> accepted"
+    assert _released(gw, "d_002") and _released(gw, "d_003")
+
+
+def test_takeover_decline_is_rematched():
+    c, gw = ctx_for(takeover_routes())
+    assert smoke.check_takeover_decline(c) == "d_003 declined ride-123 -> re-matched to d_077"
+    c, gw = ctx_for(takeover_routes(decision={"decision": "declined", "rematched_to": ""}))
+    with pytest.raises(CheckFailed, match="not re-matched"):
+        smoke.check_takeover_decline(c)
+    assert _released(gw, "d_003")
+
+
+@pytest.mark.parametrize("kw, msg", [
+    ({"offer": False}, "no offer"),
+    ({"decision": {"decision": "nope"}}, "accept"),
+    ({"ride": False}, "is not driving"),
+    ({"send": resp(503, {"error": "disabled"})}, "send-ride HTTP 503"),
+])
+def test_takeover_accept_failures(kw, msg):
+    c, gw = ctx_for(takeover_routes(**kw))
+    with pytest.raises(CheckFailed, match=msg):
+        smoke.check_takeover_accept(c)
+
+
+def test_takeover_needs_an_idle_driver():
+    c, _ = ctx_for({("GET", "/v1/drivers"): resp(body={"drivers": [{"id": "d_1", "status": "on_trip"}]})})
+    with pytest.raises(CheckFailed, match="no idle driver"):
+        smoke.check_takeover_accept(c)
+    routes = takeover_routes()
+    routes[("POST", "/v1/drivers/d_003/send-ride")] = resp(409, {"error": "busy"})
+    c, _ = ctx_for(routes)
+    with pytest.raises(CheckFailed, match="every idle driver"):
+        smoke.check_takeover_accept(c)
+
+
 def test_docs():
     spec = {"openapi": "3.1.0", "paths": {"/a": {"get": {}, "post": {}}, "/b": {"get": {}, "parameters": []}}}
     c, _ = ctx_for({("GET", "/docs"): resp(body=b"<div id=swagger-ui>"), ("GET", "/openapi.json"): resp(body=spec)})

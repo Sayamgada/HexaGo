@@ -34,6 +34,12 @@ const (
 // RideTopic returns the topic carrying updates for one ride.
 func RideTopic(rideID string) string { return RideTopicPrefix + rideID }
 
+// DriverTopicPrefix carries take-over mode ride offers for one driver (driver:<id>).
+const DriverTopicPrefix = "driver:"
+
+// DriverTopic returns the topic carrying ride offers for one taken-over driver.
+func DriverTopic(driverID string) string { return DriverTopicPrefix + driverID }
+
 // ValidTopic reports whether t is a topic clients may subscribe to.
 func ValidTopic(t string) bool {
 	switch {
@@ -41,6 +47,9 @@ func ValidTopic(t string) bool {
 		return true
 	case strings.HasPrefix(t, RideTopicPrefix):
 		id := t[len(RideTopicPrefix):]
+		return id != "" && len(id) <= maxRideIDLen && !strings.ContainsAny(id, " \t\r\n")
+	case strings.HasPrefix(t, DriverTopicPrefix):
+		id := t[len(DriverTopicPrefix):]
 		return id != "" && len(id) <= maxRideIDLen && !strings.ContainsAny(id, " \t\r\n")
 	}
 	return false

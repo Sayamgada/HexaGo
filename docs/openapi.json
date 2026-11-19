@@ -774,6 +774,127 @@
         },
         "type": "object"
       },
+      "ForecastCell": {
+        "properties": {
+          "boundary": {
+            "items": {
+              "items": {
+                "description": "lat, lng",
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "center": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "demand_score": {
+            "description": "0..1, absolute (12 rides/h = 0.5)",
+            "type": "number"
+          },
+          "expected_earnings_per_hr": {
+            "description": "INR/h for one more driver here",
+            "type": "integer"
+          },
+          "expected_requests_per_hr": {
+            "type": "number"
+          },
+          "explanation": {
+            "description": "One line for drivers",
+            "type": "string"
+          },
+          "explanation_source": {
+            "enum": [
+              "template",
+              "llm"
+            ],
+            "type": "string"
+          },
+          "h3": {
+            "description": "H3 res-8 cell",
+            "type": "string"
+          },
+          "history_rate": {
+            "type": "number"
+          },
+          "recent_requests": {
+            "description": "Last 30 min",
+            "type": "integer"
+          },
+          "supply": {
+            "description": "Idle cars in the cell",
+            "type": "integer"
+          },
+          "trend": {
+            "enum": [
+              "rising",
+              "steady",
+              "falling"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "h3",
+          "boundary",
+          "demand_score",
+          "expected_earnings_per_hr",
+          "explanation"
+        ],
+        "type": "object"
+      },
+      "ForecastHeatmap": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastCell"
+            },
+            "type": "array"
+          },
+          "horizon": {
+            "description": "0, 15 or 30",
+            "type": "integer"
+          },
+          "hotspots": {
+            "items": {
+              "description": "Top cells by earnings",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "interval_s": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "integer"
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "scenarios": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "horizon",
+          "cells"
+        ],
+        "type": "object"
+      },
       "Health": {
         "properties": {
           "city_center": {
@@ -1330,6 +1451,36 @@
         ],
         "type": "object"
       },
+      "OfferResult": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "accepted",
+              "declined"
+            ],
+            "type": "string"
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "rematched_to": {
+            "description": "Declined: the new driver, if any",
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "status": {
+            "description": "Ride status afterwards",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ride_id",
+          "decision"
+        ],
+        "type": "object"
+      },
       "OpsReport": {
         "properties": {
           "actions": {
@@ -1883,6 +2034,65 @@
           "kind",
           "from",
           "to"
+        ],
+        "type": "object"
+      },
+      "RideOffer": {
+        "properties": {
+          "driver_id": {
+            "type": "string"
+          },
+          "dropoff": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fare_inr": {
+            "type": "number"
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "pickup_eta_sec": {
+            "type": "integer"
+          },
+          "reason": {
+            "description": "offer_closed only",
+            "enum": [
+              "accepted",
+              "declined",
+              "timeout",
+              "cancelled",
+              "released"
+            ],
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "rider_id": {
+            "type": "string"
+          },
+          "timeout_s": {
+            "type": "integer"
+          },
+          "trip_km": {
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "ride_offer",
+              "offer_closed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "ride_id",
+          "driver_id"
         ],
         "type": "object"
       },
@@ -2451,6 +2661,31 @@
             "type": "object"
           }
         },
+        "type": "object"
+      },
+      "TakeoverView": {
+        "properties": {
+          "driver_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "human_controlled": {
+            "type": "boolean"
+          },
+          "offer": {
+            "$ref": "#/components/schemas/RideOffer"
+          },
+          "ttl_s": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "driver_id",
+          "human_controlled"
+        ],
         "type": "object"
       },
       "Tier": {
@@ -3950,6 +4185,86 @@
         "x-required-scope": "rides:read"
       }
     },
+    "/v1/drivers/{id}/send-ride": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "sendDemoRide",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideView"
+                }
+              }
+            },
+            "description": "The ride (offered on driver:\u003cid\u003e on the next tick)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "DEMO_MODE: book a ride near a taken-over driver, assigned to it",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
     "/v1/drivers/{id}/status": {
       "post": {
         "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
@@ -4017,6 +4332,191 @@
           }
         },
         "summary": "Driver telemetry / status update (creates the driver on first call)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/drivers/{id}/takeover": {
+      "delete": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "releaseDriver",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoverView"
+                }
+              }
+            },
+            "description": "Take-over state"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Return the driver to simulator control (a pending offer is re-matched)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      },
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getTakeover",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoverView"
+                }
+              }
+            },
+            "description": "Take-over state"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Take-over state of a driver and its pending ride offer",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      },
+      "post": {
+        "description": "Rides matched to a human-controlled driver are offered on the `driver:\u003cid\u003e` stream topic (15 s to accept) instead of auto-accepted; decline or timeout re-runs matching without that driver.\n\nScope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "takeOverDriver",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoverView"
+                }
+              }
+            },
+            "description": "Take-over state"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Put a simulated driver under human control for 10 min (call again to renew)",
         "tags": [
           "Rides"
         ],
@@ -4101,6 +4601,70 @@
           "Rides"
         ],
         "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/forecast/heatmap": {
+      "get": {
+        "description": "Scope `pricing:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getForecastHeatmap",
+        "parameters": [
+          {
+            "description": "Minutes ahead: 0, 15 or 30 (default 0)",
+            "in": "query",
+            "name": "horizon",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastHeatmap"
+                }
+              }
+            },
+            "description": "Heatmap"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Demand Forecast: expected demand and driver earnings per H3 res-8 cell",
+        "tags": [
+          "Pricing"
+        ],
+        "x-required-scope": "pricing:read",
+        "x-served-by": "agents-py"
       }
     },
     "/v1/ledger/entries": {
@@ -5291,6 +5855,194 @@
           "Rides"
         ],
         "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/rides/{id}/offer/{decision}": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "respondOffer",
+        "parameters": [
+          {
+            "description": "Ride UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "accept | decline",
+            "in": "path",
+            "name": "decision",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferResult"
+                }
+              }
+            },
+            "description": "Outcome (declined: the driver it was re-matched to, if any)"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Accept or decline a ride offered to a taken-over driver",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/route": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getRoute",
+        "parameters": [
+          {
+            "description": "",
+            "in": "query",
+            "name": "from_lat",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "from_lng",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "to_lat",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "to_lng",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "distance_km": {
+                      "type": "number"
+                    },
+                    "points": {
+                      "items": {
+                        "items": {
+                          "description": "lat, lng",
+                          "type": "number"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
+                    },
+                    "source": {
+                      "enum": [
+                        "osrm",
+                        "straight_line"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "points",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Route"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Road route between two points (OSRM via the simulator; straight line as fallback)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
       }
     },
     "/v1/safety/checkins": {

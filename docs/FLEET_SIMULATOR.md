@@ -89,6 +89,27 @@ Requests per minute = base × demo time-of-day factor × scenario multipliers + 
 Unknown scenarios return `404`. With `DEMO_MODE=false` all `/v1/sim/*` routes return `503`.
 Scenario start events appear on `ops` as agent `fleet_simulator`.
 
+## Take-over mode
+
+A person can drive one simulated car from the Driver module (`TAKEOVER_ENABLED`, default `true`).
+
+| Endpoint | Effect |
+|---|---|
+| `POST /v1/drivers/{id}/takeover` | Human control for 10 min; call again to renew (the app renews every minute) |
+| `GET /v1/drivers/{id}/takeover` | `{human_controlled, ttl_s, expires_at, offer}` |
+| `DELETE /v1/drivers/{id}/takeover` | Back to the simulator; a pending offer is re-matched |
+| `POST /v1/drivers/{id}/send-ride` | DEMO_MODE only: books a ride 0.4-0.8 km from the car, assigned to it (`201`, `409` if busy, `403` outside DEMO_MODE) |
+| `POST /v1/rides/{id}/offer/accept` | Starts the normal ride flow (accepted -> arriving -> on_trip -> completed) |
+| `POST /v1/rides/{id}/offer/decline` | Re-runs matching without this driver: `{decision, status, rematched_to}` |
+
+While human-controlled, the car parks instead of wandering and stays online in a rain storm. A ride matched to it is not
+auto-accepted: a `ride_offer` message (`ride_id`, `pickup`, `dropoff`, `fare_inr`, `trip_km`, `pickup_eta_sec`,
+`timeout_s: 15`, `expires_at`) is published on the `driver:<id>` stream topic and shown on the Driver screen with a
+15 s countdown. Decline, a timeout, or the take-over ending re-run matching excluding the driver (a ride with no other
+driver is reopened and retried; it is never offered to the same driver again) and publish `offer_closed` with
+`reason` `declined | timeout | released | cancelled | accepted`. Take-over start and end are `fleet_simulator` events
+(`kind: takeover`) on `ops`.
+
 ## WebSocket `/v1/stream`
 
 Client → server:
@@ -157,3 +178,4 @@ go run ./cmd/streamprobe -url wss://dispatch-go.onrender.com/v1/stream -topics d
 | `OSRM_RPS` | `1` | OSRM request rate limit |
 | `TELEMETRY_FLUSH_INTERVAL` | `5s` | Telemetry batch interval |
 | `TELEMETRY_RETENTION` | `2h` | Telemetry retention (`0` = forever) |
+| `TAKEOVER_ENABLED` | `true` | Take-over mode routes (`503` when off) |

@@ -194,6 +194,8 @@ type Sim struct {
 
 	inMu  sync.Mutex
 	inbox []store.Ride
+
+	to takeoverState // take-over mode (takeover.go), guarded by mu
 }
 
 type tickStats struct {
@@ -417,7 +419,7 @@ func (s *Sim) reconcileFleet() {
 	}
 	for i := len(s.order) - 1; i >= 0 && len(s.order) > s.target; i-- {
 		d := s.order[i]
-		if d.busy() {
+		if d.busy() || s.to.drivers[d.id] != nil {
 			continue
 		}
 		if d.pending != nil {
@@ -465,6 +467,7 @@ func (s *Sim) Step(ctx context.Context) {
 			rideMsgs = append(rideMsgs, u)
 		}
 	}
+	endedTakeovers := s.tickTakeovers(now)
 	s.reconcileFleet()
 
 	busy := 0
@@ -472,7 +475,7 @@ func (s *Sim) Step(ctx context.Context) {
 	var obs []safety.Observation
 	var ended []string
 	for _, d := range s.order {
-		wantOffline := d.suspended || (d.ride == nil && now.Before(d.offlineUntil))
+		wantOffline := d.suspended || (d.ride == nil && now.Before(d.offlineUntil) && !s.humanLocked(d.id))
 		switch {
 		case d.suspended:
 			s.clearRoute(d)
@@ -535,6 +538,7 @@ func (s *Sim) Step(ctx context.Context) {
 	for _, e := range effects {
 		e(ctx)
 	}
+	s.flushTakeovers(ctx, endedTakeovers)
 	if s.safety != nil {
 		for _, id := range ended {
 			s.safety.RideEnded(id)
@@ -595,6 +599,7 @@ func (s *Sim) etaSec(d *simDriver) int {
 func (s *Sim) intake(r store.Ride, now time.Time) (stream.RideUpdate, bool) {
 	d, ok := s.drivers[r.DriverID]
 	if r.Status == store.RideCancelled {
+		s.withdrawOffer(r.ID)
 		if ok && d.ride != nil && d.ride.id == r.ID {
 			s.dropRide(d, now)
 		}
@@ -603,13 +608,21 @@ func (s *Sim) intake(r store.Ride, now time.Time) (stream.RideUpdate, bool) {
 	if !ok || r.Status != store.RideMatched || d.busy() {
 		return stream.RideUpdate{}, false
 	}
+	if s.offerToHuman(d, r, now) { // take-over mode: offered, not auto-accepted
+		return stream.RideUpdate{}, false
+	}
+	return s.startRide(d, r, now), true
+}
+
+// startRide makes d accept ride r and start driving to the pickup. Callers hold s.mu.
+func (s *Sim) startRide(d *simDriver, r store.Ride, now time.Time) stream.RideUpdate {
 	d.ride = &simRide{id: r.ID, rider: r.RiderID, status: RideAccepted, pickup: r.Pickup, dropoff: r.Dropoff, fresh: true}
 	s.rideStarted()
 	s.clearRoute(d)
 	d.dwell = time.Time{}
 	d.pending = s.planner.request(d.pos, r.Pickup, true, now.Add(s.routeWait))
 	d.pendFor = toPickup
-	return s.rideUpdate(d, s.wireDriver(d)), true
+	return s.rideUpdate(d, s.wireDriver(d))
 }
 
 func (s *Sim) clearRoute(d *simDriver) {
@@ -735,7 +748,7 @@ func (s *Sim) advanceRideEffect(driverID, rideID string, to store.RideStatus) ef
 
 // maybeWander sends a parked idle driver toward a demand hotspot.
 func (s *Sim) maybeWander(d *simDriver, now time.Time) {
-	if d.pending != nil || now.Before(d.dwell) {
+	if d.pending != nil || now.Before(d.dwell) || s.humanLocked(d.id) {
 		return
 	}
 	if d.tier == fleet.TierAV && d.battery < 25 {

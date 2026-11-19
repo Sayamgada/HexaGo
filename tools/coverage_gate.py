@@ -90,7 +90,8 @@ def go_coverage(profile_text: str, module: str, packages: list[str],
         for block, (n, hit) in blocks.items():
             file_path = block.split(":", 1)[0]
             rel = file_path[len(prefix):] if file_path.startswith(prefix) else file_path
-            if _in_package(rel.rsplit("/", 1)[0], pkg):
+            # A package directory, or a single file (e.g. "internal/sim/takeover.go").
+            if _in_package(rel.rsplit("/", 1)[0], pkg) or rel == pkg.strip("/"):
                 total += n
                 covered += n if hit else 0
         results.append(PackageCoverage("go", pkg, total, covered, threshold))

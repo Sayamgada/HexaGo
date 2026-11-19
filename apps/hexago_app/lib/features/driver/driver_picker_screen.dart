@@ -13,19 +13,24 @@ import 'widgets/driver_widgets.dart';
 
 /// `/driver`: pick a simulated driver to take over.
 class DriverPickerScreen extends StatelessWidget {
-  const DriverPickerScreen({super.key, this.onPick});
+  const DriverPickerScreen({super.key, this.onPick, this.onBecomeDriver});
 
   /// Defaults to opening `/driver/<id>`.
   final void Function(BuildContext context, DriverSummary driver)? onPick;
 
+  /// Defaults to opening `/driver/onboarding`.
+  final void Function(BuildContext context)? onBecomeDriver;
+
   @override
-  Widget build(BuildContext context) => WakingGate(child: DriverPickerBody(onPick: onPick));
+  Widget build(BuildContext context) =>
+      WakingGate(child: DriverPickerBody(onPick: onPick, onBecomeDriver: onBecomeDriver));
 }
 
 class DriverPickerBody extends ConsumerStatefulWidget {
-  const DriverPickerBody({super.key, this.onPick, this.refreshEvery = const Duration(seconds: 5)});
+  const DriverPickerBody({super.key, this.onPick, this.onBecomeDriver, this.refreshEvery = const Duration(seconds: 5)});
 
   final void Function(BuildContext context, DriverSummary driver)? onPick;
+  final void Function(BuildContext context)? onBecomeDriver;
   final Duration refreshEvery;
 
   @override
@@ -92,7 +97,24 @@ class _DriverPickerBodyState extends ConsumerState<DriverPickerBody> {
     final visible = _visible;
     final all = _all;
     return Scaffold(
-      appBar: AppBar(title: const Text('Driver: take over a car')),
+      appBar: AppBar(title: const Text('Driver: take over a car'), actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: FilledButton.tonalIcon(
+            key: const ValueKey('become-driver'),
+            onPressed: () {
+              final cb = widget.onBecomeDriver;
+              if (cb != null) {
+                cb(context);
+              } else {
+                context.push('/driver/onboarding');
+              }
+            },
+            icon: const Icon(Icons.person_add_alt_1, size: 18),
+            label: const Text('Become a driver'),
+          ),
+        ),
+      ]),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),

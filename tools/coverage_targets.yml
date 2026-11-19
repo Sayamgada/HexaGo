@@ -3,8 +3,8 @@
 # Only the packages listed here are gated. To gate a new package (ledger,
 # safety, pricing, ...), add its directory below. A listed Python package
 # that does not exist yet is reported as "pending" instead of failing, so it
-# can be added here before its code lands. A Python entry may also be a
-# single file.
+# can be added here before its code lands. An entry (Go or Python) may also
+# be a single file.
 
 threshold: 96.0
 
@@ -25,6 +25,9 @@ go:
     # Public API platform: API keys, scopes, rate limits, webhooks; OpenAPI document.
     - internal/developer
     - internal/apidocs
+    # Take-over mode: the human-driver state machine (offer / accept / decline / timeout / TTL) and its dispatch hooks.
+    - internal/sim/takeover.go
+    - internal/dispatch/takeover.go
 
 python:
   # Cobertura XML written by: pytest --cov=src --cov-report=xml:coverage.xml
@@ -40,6 +43,8 @@ python:
     - src/agents_py/agents/pricing/quote.py
     # Surge Equilibrium surge map.
     - src/agents_py/agents/pricing/surge_map.py
+    # Demand Forecast: pure model, data source, agent loop and endpoint.
+    - src/agents_py/agents/forecast
     # Legal & Jurisdiction: rule extractor + diff (legal_rules.py), store, agent, API.
     - src/agents_py/agents/legal
     # Ops Supervisor Autonomous Ops Report: report builder (report.py), runner, API.

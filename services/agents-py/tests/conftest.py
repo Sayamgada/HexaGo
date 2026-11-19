@@ -15,12 +15,14 @@ def _no_external_infra(monkeypatch):
     monkeypatch.setattr(infra.settings, "HEARTBEAT_INTERVAL_S", 0)
     monkeypatch.setattr(infra.settings, "SETTLEMENT_SCAN_INTERVAL_S", 0)
     monkeypatch.setattr(infra.settings, "SURGE_MAP_INTERVAL_S", 0)
+    monkeypatch.setattr(infra.settings, "FORECAST_INTERVAL_S", 0)
     _reset_singletons()
     yield
     _reset_singletons()
 
 
 def _reset_singletons():
+    from src.agents_py.agents.forecast import agent as forecast_agent
     from src.agents_py.agents.pricing import surge_map
     from src.agents_py.core import events, llm, memory
 
@@ -29,6 +31,7 @@ def _reset_singletons():
     events.reset_event_store()
     memory.reset_memory_store()
     surge_map.set_map(None)
+    forecast_agent.set_agent(None)
 
 
 @pytest.fixture

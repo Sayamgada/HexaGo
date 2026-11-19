@@ -13,6 +13,8 @@ import litellm
 
 from src.agents_py.agents import ops_supervisor
 from src.agents_py.agents.booking.api import router as booking_router
+from src.agents_py.agents.forecast import agent as forecast_agent
+from src.agents_py.agents.forecast.api import router as forecast_router
 from src.agents_py.agents.legal.api import router as legal_router
 from src.agents_py.agents.supervisor import ops_report
 from src.agents_py.agents.supervisor.api import router as ops_report_router
@@ -51,6 +53,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(settlement_agent.scan_loop(settings.SETTLEMENT_SCAN_INTERVAL_S)))
     if settings.SURGE_MAP_INTERVAL_S > 0:
         tasks.append(asyncio.create_task(surge_map.surge_loop(settings.SURGE_MAP_INTERVAL_S)))
+    if settings.FORECAST_ENABLED and settings.FORECAST_INTERVAL_S > 0:
+        tasks.append(asyncio.create_task(forecast_agent.forecast_loop(settings.FORECAST_INTERVAL_S)))
     if settings.OPS_REPORT_ENABLED and settings.OPS_REPORT_INTERVAL_S > 0:
         tasks.append(asyncio.create_task(ops_report.report_loop(settings.OPS_REPORT_INTERVAL_S)))
     try:
@@ -84,6 +88,8 @@ app.include_router(safety_router)
 app.include_router(settlement_router)
 app.include_router(booking_router)
 app.include_router(pricing_router)
+app.include_router(forecast_router)
+forecast_agent.apply_flag()  # FORECAST_ENABLED=false: the roster shows demand_forecast as planned
 app.include_router(legal_router)
 app.include_router(ops_report_router)
 

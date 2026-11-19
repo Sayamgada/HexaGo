@@ -216,6 +216,18 @@ func schemas() M {
 		"Tiers": obj([]string{"currency", "tiers"}, M{"currency": str(""), "surge_cap": num(""), "tiers": mapOf(obj(nil, M{
 			"label": str(""), "base": num(""), "per_km": num(""), "per_min": num(""), "minimum": num(""),
 		}))}),
+		"ForecastCell": obj([]string{"h3", "boundary", "demand_score", "expected_earnings_per_hr", "explanation"}, M{
+			"h3": str("H3 res-8 cell"), "center": ref("LatLng"), "boundary": arr(arr(num("lat, lng"))),
+			"demand_score": num("0..1, absolute (12 rides/h = 0.5)"), "expected_requests_per_hr": num(""),
+			"expected_earnings_per_hr": integer("INR/h for one more driver here"), "supply": integer("Idle cars in the cell"),
+			"recent_requests": integer("Last 30 min"), "trend": enum("", "rising", "steady", "falling"), "history_rate": num(""),
+			"explanation": str("One line for drivers"), "explanation_source": enum("", "template", "llm"),
+		}),
+		"ForecastHeatmap": obj([]string{"horizon", "cells"}, M{
+			"as_of": dt(""), "horizon": integer("0, 15 or 30"), "resolution": integer(""), "model": str(""), "source": str(""),
+			"scenarios": arr(str("")), "runs": integer(""), "interval_s": num(""), "hotspots": arr(str("Top cells by earnings")),
+			"cells": arr(ref("ForecastCell")),
+		}),
 		"QuoteInput": obj(nil, M{
 			"tier": withDesc(tier, "Default mini"), "pickup": ref("LatLng"), "dropoff": ref("LatLng"),
 			"distance_km": num("With duration_min, instead of pickup/dropoff"), "duration_min": num(""),
@@ -263,6 +275,21 @@ func schemas() M {
 		"OpsReportRow": obj([]string{"id", "generated_at"}, M{
 			"id": str(""), "generated_at": str(""), "trigger": str(""), "anomalies": integer(""), "summary_source": str(""),
 			"human_interventions": integer(""), "headline": str(""),
+		}),
+
+		// ---- take-over mode ----
+		"RideOffer": obj([]string{"type", "ride_id", "driver_id"}, M{
+			"type": enum("", "ride_offer", "offer_closed"), "ride_id": str(""), "driver_id": str(""), "rider_id": str(""),
+			"pickup": ref("LatLng"), "dropoff": ref("LatLng"), "fare_inr": num(""), "trip_km": num(""),
+			"pickup_eta_sec": integer(""), "timeout_s": integer(""), "expires_at": dt(""),
+			"reason": enum("offer_closed only", "accepted", "declined", "timeout", "cancelled", "released"),
+		}),
+		"TakeoverView": obj([]string{"driver_id", "human_controlled"}, M{
+			"driver_id": str(""), "human_controlled": boolean(""), "expires_at": dt(""), "ttl_s": integer(""), "offer": ref("RideOffer"),
+		}),
+		"OfferResult": obj([]string{"ride_id", "decision"}, M{
+			"ride_id": str(""), "driver_id": str(""), "decision": enum("", "accepted", "declined"), "status": str("Ride status afterwards"),
+			"rematched_to": str("Declined: the new driver, if any"),
 		}),
 
 		// ---- developer platform ----

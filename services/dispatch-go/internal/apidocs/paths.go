@@ -54,6 +54,27 @@ func paths() M {
 			ok(200, "Drivers", anyObj("{drivers: [...], count, simulated}")))},
 		"/v1/drivers/{id}": M{"get": op(tagRides, "getDriver", "One driver's live state, current ride (ETA, progress), AV panel and Safety suspension", sRidesR,
 			path("id", "Driver id"), ok(200, "Driver", anyObj("Driver detail")), fails(404))},
+		// ---- take-over mode (a person drives a simulated car; TAKEOVER_ENABLED) ----
+		"/v1/drivers/{id}/takeover": M{
+			"get": op(tagRides, "getTakeover", "Take-over state of a driver and its pending ride offer", sRidesR,
+				path("id", "Driver id"), ok(200, "Take-over state", ref("TakeoverView")), fails(404, 503)),
+			"post": op(tagRides, "takeOverDriver", "Put a simulated driver under human control for 10 min (call again to renew)", sRidesW,
+				desc("Rides matched to a human-controlled driver are offered on the `driver:<id>` stream topic (15 s to accept) "+
+					"instead of auto-accepted; decline or timeout re-runs matching without that driver."),
+				path("id", "Driver id"), ok(200, "Take-over state", ref("TakeoverView")), fails(404, 503)),
+			"delete": op(tagRides, "releaseDriver", "Return the driver to simulator control (a pending offer is re-matched)", sRidesW,
+				path("id", "Driver id"), ok(200, "Take-over state", ref("TakeoverView")), fails(404, 503)),
+		},
+		"/v1/route": M{"get": op(tagRides, "getRoute", "Road route between two points (OSRM via the simulator; straight line as fallback)", sRidesR,
+			param("query", "from_lat", "number", "", true), param("query", "from_lng", "number", "", true),
+			param("query", "to_lat", "number", "", true), param("query", "to_lng", "number", "", true),
+			ok(200, "Route", obj([]string{"points", "source"}, M{"points": arr(arr(num("lat, lng"))),
+				"source": enum("", "osrm", "straight_line"), "distance_km": num("")})), fails(400))},
+		"/v1/drivers/{id}/send-ride": M{"post": op(tagRides, "sendDemoRide", "DEMO_MODE: book a ride near a taken-over driver, assigned to it", sRidesW,
+			path("id", "Driver id"), ok(201, "The ride (offered on driver:<id> on the next tick)", ref("RideView")), fails(403, 404, 409, 503))},
+		"/v1/rides/{id}/offer/{decision}": M{"post": op(tagRides, "respondOffer", "Accept or decline a ride offered to a taken-over driver", sRidesW,
+			path("id", "Ride UUID"), param("path", "decision", "string", "accept | decline", true),
+			ok(200, "Outcome (declined: the driver it was re-matched to, if any)", ref("OfferResult")), fails(400, 404, 503))},
 		"/v1/metrics/dispatch": M{"get": op(tagRides, "getDispatchMetrics", "Dispatch latency percentiles and fleet counts", sRidesR,
 			ok(200, "Metrics", ref("DispatchMetrics")))},
 		"/v1/eta": M{"get": op(tagRides, "getETA", "Road distance and duration between two points", sRidesR,
@@ -193,6 +214,9 @@ func paths() M {
 			ok(200, "Surge map", ref("SurgeMap")))},
 		"/v1/pricing/quote": M{"post": op(tagPricing, "getQuote", "Fare quote with surge", sPricing, proxied(),
 			body(ref("QuoteInput"), true), ok(200, "Quote", ref("Quote")), fails(422))},
+		"/v1/forecast/heatmap": M{"get": op(tagPricing, "getForecastHeatmap", "Demand Forecast: expected demand and driver earnings per H3 res-8 cell", sPricing, proxied(),
+			param("query", "horizon", "integer", "Minutes ahead: 0, 15 or 30 (default 0)", false),
+			ok(200, "Heatmap", ref("ForecastHeatmap")), fails(422, 503))},
 
 		// ---- legal & jurisdiction (agents-py) ----
 		"/v1/legal/ingest": M{"post": op(tagLegal, "ingestRegulation", "Extract rule changes from regulation text and apply them", sAgents, proxied(),

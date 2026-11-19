@@ -248,6 +248,7 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	}
 	mountSafety(r, options.Safety, agentsProxy)
 	mountDrivers(r, options.Sim, svc, options.Safety)
+	mountTakeover(r, options.Sim, cfg, agentsProxy)
 	options.Ledger = mountLedger(r, options.Ledger, cfg, svc, options.Safety, hub)
 	options.Scheduler = mountScheduler(r, options.Scheduler, cfg, svc, agentsProxy)
 	mountCounters(r, options.Counters, svc, options.Ledger)

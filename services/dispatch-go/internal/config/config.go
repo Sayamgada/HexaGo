@@ -33,6 +33,9 @@ type Config struct {
 	OSRMURL         string  // OSRM_URL, default public demo server; "off" = straight lines only
 	OSRMRPS         float64 // OSRM_RPS, request rate limit, default 1 (public server policy)
 
+	// Take-over mode: a person drives a simulated car from the Driver screen (TAKEOVER_ENABLED, default true).
+	TakeoverEnabled bool
+
 	// Telemetry persistence.
 	TelemetryFlush     time.Duration // TELEMETRY_FLUSH_INTERVAL, default 5s
 	TelemetryRetention time.Duration // TELEMETRY_RETENTION, default 2h (0 keeps everything)
@@ -93,6 +96,7 @@ func Load() *Config {
 	}
 
 	return &Config{
+		TakeoverEnabled:    getEnv("TAKEOVER_ENABLED", "true") == "true",
 		SimDrivers:         simDrivers,
 		SimDemandPerMin:    demand,
 		OSRMURL:            osrmURL,

@@ -91,7 +91,8 @@ func TestEveryRouteIsDocumented(t *testing.T) {
 	for p, item := range paths {
 		for method, o := range item.(apidocs.M) {
 			if o.(apidocs.M)["x-served-by"] == "agents-py" {
-				if !strings.HasPrefix(p, "/v1/agents") && !strings.HasPrefix(p, "/v1/pricing") && !strings.HasPrefix(p, "/v1/safety") {
+				if !strings.HasPrefix(p, "/v1/agents") && !strings.HasPrefix(p, "/v1/pricing") && !strings.HasPrefix(p, "/v1/safety") &&
+					!strings.HasPrefix(p, "/v1/forecast") {
 					t.Errorf("%s %s is marked agents-py but the gateway does not proxy it", method, p)
 				}
 				continue

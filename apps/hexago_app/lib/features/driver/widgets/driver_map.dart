@@ -10,12 +10,30 @@ import '../../../widgets/hexagon.dart';
 import '../../ops/state/ops_providers.dart';
 import '../../platform/widgets/surge_layer.dart';
 import '../models/driver_models.dart';
+import '../models/takeover_models.dart';
 import 'driver_widgets.dart';
+import 'forecast_widgets.dart';
 
 /// Live map centred on the driver's car, with the pickup / drop pins, a line
-/// to the current milestone, the surge hex overlay and its toggle.
+/// to the current milestone, the surge hex overlay and its toggle, and (in
+/// take-over mode) the Demand Forecast heatmap with its Now / +15 / +30
+/// selector and the route to a chosen hotspot.
 class DriverMap extends ConsumerStatefulWidget {
-  const DriverMap({super.key, required this.lat, required this.lng, required this.heading, required this.phase, this.ride, this.av = false});
+  const DriverMap({
+    super.key,
+    required this.lat,
+    required this.lng,
+    required this.heading,
+    required this.phase,
+    this.ride,
+    this.av = false,
+    this.forecast = const [],
+    this.horizon,
+    this.onHorizon,
+    this.selectedCell,
+    this.route = const [],
+    this.offer,
+  });
 
   final double lat;
   final double lng;
@@ -23,6 +41,18 @@ class DriverMap extends ConsumerStatefulWidget {
   final DriverPhase phase;
   final CurrentRide? ride;
   final bool av;
+
+  /// Demand Forecast cells for the heatmap (empty = no heatmap).
+  final List<ForecastCell> forecast;
+  final int? horizon;
+  final ValueChanged<int>? onHorizon;
+  final String? selectedCell;
+
+  /// Route to the selected hotspot.
+  final List<(double, double)> route;
+
+  /// A pending ride offer: its pickup is pinned.
+  final RideOffer? offer;
 
   @override
   ConsumerState<DriverMap> createState() => _DriverMapState();
@@ -86,12 +116,28 @@ class _DriverMapState extends ConsumerState<DriverMap> {
                 userAgentPackageName: 'com.hexago.hexago_app',
                 maxZoom: 19,
               ),
+            if (widget.forecast.isNotEmpty) ForecastLayer(cells: widget.forecast, selected: widget.selectedCell),
             const SurgeZonesLayer(),
+            if (widget.route.length >= 2)
+              PolylineLayer(polylines: [
+                Polyline(
+                  points: [for (final (a, b) in widget.route) LatLng(a, b)],
+                  color: HexaColors.cyan,
+                  strokeWidth: 4,
+                ),
+              ]),
             if (target != null)
               PolylineLayer(polylines: [
                 Polyline(points: [car, target], color: c.withValues(alpha: 0.8), strokeWidth: 3, pattern: StrokePattern.dashed(segments: const [8, 6])),
               ]),
             MarkerLayer(markers: [
+              if (widget.offer != null)
+                Marker(
+                  point: LatLng(widget.offer!.pickupLat, widget.offer!.pickupLng),
+                  width: 30,
+                  height: 30,
+                  child: const Icon(Icons.person_pin_circle, color: HexaColors.amber, size: 28, key: ValueKey('offer-pin')),
+                ),
               if (r != null) ...[
                 Marker(
                   point: LatLng(r.pickupLat, r.pickupLng),
@@ -137,6 +183,20 @@ class _DriverMapState extends ConsumerState<DriverMap> {
             child: const SurgeToggle(),
           ),
         ),
+        if (widget.onHorizon != null)
+          Positioned(
+            left: 10,
+            top: 10,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xDD0B0F17), borderRadius: BorderRadius.circular(8)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                HorizonSelector(value: widget.horizon ?? 0, onChanged: widget.onHorizon!),
+                const SizedBox(height: 4),
+                const DemandLegend(),
+              ]),
+            ),
+          ),
         Positioned(
           right: 10,
           top: 10,

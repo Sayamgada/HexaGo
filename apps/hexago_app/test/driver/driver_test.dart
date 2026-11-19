@@ -10,6 +10,8 @@ import 'package:hexago_app/features/driver/widgets/driver_earnings.dart';
 import 'package:hexago_app/features/ops/models/ops_models.dart';
 import 'package:hexago_app/theme/hexago_theme.dart';
 
+import 'takeover_fakes.dart';
+
 final _now = DateTime.utc(2026, 11, 19, 8); // 13:30 IST
 
 class FakeDriverApi implements DriverApi {
@@ -43,6 +45,7 @@ Widget _wrap(FakeDriverApi api, Widget child) => ProviderScope(
         driverPollProvider.overrideWithValue(const Duration(hours: 1)),
         earningsPollProvider.overrideWithValue(const Duration(hours: 1)),
         driverPositionsProvider.overrideWithValue(const Stream<List<DriverPosition>>.empty()),
+        takeoverApiProvider.overrideWithValue(FakeTakeoverApi()),
       ],
       child: MaterialApp(theme: buildHexaTheme(), home: child),
     );
