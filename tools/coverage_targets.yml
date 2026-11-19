@@ -22,6 +22,9 @@ go:
     - internal/safety
     # - internal/pricing
     - internal/scheduler
+    # Public API platform: API keys, scopes, rate limits, webhooks; OpenAPI document.
+    - internal/developer
+    - internal/apidocs
 
 python:
   # Cobertura XML written by: pytest --cov=src --cov-report=xml:coverage.xml

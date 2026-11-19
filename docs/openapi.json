@@ -1,0 +1,6264 @@
+{
+  "components": {
+    "headers": {
+      "X-RateLimit-Limit": {
+        "description": "Requests per minute allowed for the key",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Remaining": {
+        "description": "Requests left in the bucket",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Reset": {
+        "description": "Seconds until the bucket is full again",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Forbidden": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "The key lacks the required scope"
+      },
+      "RateLimited": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Rate limit exceeded; see Retry-After",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Limit": {
+            "description": "Requests per minute allowed for the key",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Remaining": {
+            "description": "Requests left in the bucket",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Reset": {
+            "description": "Seconds until the bucket is full again",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Missing, invalid or revoked API key"
+      }
+    },
+    "schemas": {
+      "Agent": {
+        "properties": {
+          "decisions_last_hour": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "fallback_mode": {
+            "type": "string"
+          },
+          "fallback_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_decision": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "responsibility": {
+            "type": "string"
+          },
+          "runs_in": {
+            "description": "agents-py | dispatch-go",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "active | idle | degraded",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "type": "object"
+      },
+      "AgentEvent": {
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "number"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "used_fallback": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "AgentEventList": {
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentEvent"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
+      "AgentList": {
+        "properties": {
+          "active": {
+            "type": "integer"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/Agent"
+            },
+            "type": "array"
+          },
+          "events_backend": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agents",
+          "total"
+        ],
+        "type": "object"
+      },
+      "BookingConfirm": {
+        "properties": {
+          "plan_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id"
+        ],
+        "type": "object"
+      },
+      "BookingParse": {
+        "properties": {
+          "reply_to": {
+            "description": "Question id when answering a clarifying question",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rider_id": {
+            "description": "Demo persona, e.g. rider_priya",
+            "type": "string"
+          },
+          "text": {
+            "description": "One sentence, 1..1000 chars",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "BookingPlan": {
+        "properties": {
+          "answered_by": {
+            "description": "Model or rule-based fallback",
+            "type": "object"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "description": "Leg with origin, destination, times and price",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "question_id": {
+            "type": "string"
+          },
+          "rider_id": {
+            "type": "string"
+          },
+          "total_fare": {
+            "type": "number"
+          },
+          "type": {
+            "description": "plan: a priced, timed multi-leg plan; question: the agent needs a clarification",
+            "enum": [
+              "plan",
+              "question"
+            ],
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "Checkin": {
+        "properties": {
+          "created_at": {},
+          "expires_at": {},
+          "id": {
+            "type": "string"
+          },
+          "incident_id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "status": {
+            "description": "pending | answered | expired",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CheckinList": {
+        "properties": {
+          "checkins": {
+            "items": {
+              "$ref": "#/components/schemas/Checkin"
+            },
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkins"
+        ],
+        "type": "object"
+      },
+      "Counters": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decisions_today": {
+            "type": "integer"
+          },
+          "matches_today": {
+            "description": "Since midnight IST",
+            "type": "integer"
+          },
+          "rides_settled_today": {
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source": {
+            "description": "postgres | memory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matches_today",
+          "rides_settled_today",
+          "decisions_today"
+        ],
+        "type": "object"
+      },
+      "CreateKey": {
+        "properties": {
+          "name": {
+            "description": "Up to 80 characters",
+            "type": "string"
+          },
+          "rate_limit_per_min": {
+            "description": "1..600, default 60",
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CreateRide": {
+        "properties": {
+          "dropoff": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "rider_id": {
+            "type": "string"
+          },
+          "tier": {
+            "description": "Default mini",
+            "enum": [
+              "auto",
+              "mini",
+              "sedan",
+              "premium",
+              "xl",
+              "av",
+              "pool"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "rider_id",
+          "pickup",
+          "dropoff"
+        ],
+        "type": "object"
+      },
+      "CreateWebhook": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            },
+            "type": "array"
+          },
+          "url": {
+            "description": "Public http(s) URL",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "events"
+        ],
+        "type": "object"
+      },
+      "CreatedKey": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Key"
+          },
+          {
+            "properties": {
+              "api_key": {
+                "description": "hxg_…: shown only in this response",
+                "type": "string"
+              },
+              "warning": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "api_key"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CreatedWebhook": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Webhook"
+          },
+          {
+            "properties": {
+              "secret": {
+                "description": "whsec_…: HMAC signing secret, shown only in this response",
+                "type": "string"
+              }
+            },
+            "required": [
+              "secret"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Delivery": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "attempts": {
+            "description": "1 + up to 3 retries",
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "status_code": {
+            "type": "integer"
+          },
+          "webhook_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event",
+          "attempts",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "DeliveryList": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/Delivery"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "deliveries"
+        ],
+        "type": "object"
+      },
+      "DispatchMetrics": {
+        "properties": {
+          "active_drivers": {
+            "type": "integer"
+          },
+          "idle_drivers": {
+            "type": "integer"
+          },
+          "matches_total": {
+            "type": "integer"
+          },
+          "open_requests": {
+            "type": "integer"
+          },
+          "p50_ms": {
+            "description": "Match latency",
+            "type": "number"
+          },
+          "p95_ms": {
+            "type": "number"
+          },
+          "p99_ms": {
+            "type": "number"
+          },
+          "rides_in_progress": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "p50_ms",
+          "p95_ms",
+          "p99_ms",
+          "matches_total"
+        ],
+        "type": "object"
+      },
+      "Driver": {
+        "properties": {
+          "battery_pct": {
+            "description": "AVs only",
+            "type": "number"
+          },
+          "h3_cell": {
+            "type": "string"
+          },
+          "heading": {
+            "description": "Degrees from north",
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idle_since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "rating": {
+            "description": "1..5",
+            "type": "number"
+          },
+          "speed_kmh": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "offline",
+              "idle",
+              "en_route",
+              "on_trip"
+            ],
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "lat",
+          "lng",
+          "status",
+          "tier"
+        ],
+        "type": "object"
+      },
+      "DriverStatusInput": {
+        "properties": {
+          "battery_pct": {
+            "type": "number"
+          },
+          "heading": {
+            "type": "number"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "rating": {
+            "type": "number"
+          },
+          "speed_kmh": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "offline",
+              "idle",
+              "en_route",
+              "on_trip"
+            ],
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DriverView": {
+        "properties": {
+          "driver": {
+            "$ref": "#/components/schemas/Driver"
+          }
+        },
+        "required": [
+          "driver"
+        ],
+        "type": "object"
+      },
+      "ETA": {
+        "properties": {
+          "distance_km": {
+            "type": "number"
+          },
+          "duration_min": {
+            "type": "number"
+          },
+          "duration_s": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "distance_km",
+          "duration_min",
+          "source"
+        ],
+        "type": "object"
+      },
+      "Entry": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "ride | payout | refund | topup",
+            "type": "string"
+          },
+          "meta": {
+            "type": "object"
+          },
+          "postings": {
+            "items": {
+              "$ref": "#/components/schemas/Posting"
+            },
+            "type": "array"
+          },
+          "reverses_id": {
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "postings",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "EntryList": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "detail": {
+            "description": "What went wrong (agents-py / FastAPI validation)"
+          },
+          "error": {
+            "description": "What went wrong (dispatch-go)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "city_center": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "components": {
+            "description": "Store, fleet mirror, geo backend, stream broker, simulator, API-key store, rate limiter",
+            "type": "object"
+          },
+          "demo_mode": {
+            "type": "boolean"
+          },
+          "redis": {
+            "description": "Last Redis check (?redis=fresh runs a new one)",
+            "type": "object"
+          },
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "service"
+        ],
+        "type": "object"
+      },
+      "Incident": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision": {
+            "description": "monitor | check_in | escalate",
+            "type": "string"
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatLng"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_checkin_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resolved_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "rider_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "description": "0..1",
+            "type": "number"
+          },
+          "status": {
+            "description": "check_in | escalated | monitoring | resolved",
+            "type": "string"
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ride_id",
+          "driver_id",
+          "status",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "IncidentDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Incident"
+          },
+          {
+            "properties": {
+              "risk": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeline": {
+                "items": {
+                  "description": "Timeline step",
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "IncidentList": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "incidents": {
+            "items": {
+              "$ref": "#/components/schemas/Incident"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "incidents"
+        ],
+        "type": "object"
+      },
+      "Key": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "description": "First characters of the key",
+            "type": "string"
+          },
+          "rate_limit_per_min": {
+            "type": "integer"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "rate_limit_per_min",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "LLMBudget": {
+        "properties": {
+          "cache_hits": {
+            "type": "integer"
+          },
+          "calls_today": {
+            "type": "integer"
+          },
+          "day": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "fallback_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limits": {
+            "type": "object"
+          },
+          "model": {
+            "type": "string"
+          },
+          "store": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "tokens_today": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calls_today",
+          "tokens_today",
+          "limits",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "LatLng": {
+        "properties": {
+          "lat": {
+            "description": "Latitude",
+            "type": "number"
+          },
+          "lng": {
+            "description": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
+      "LedgerSummary": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "balanced": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "integer"
+          },
+          "payouts_today": {
+            "type": "object"
+          },
+          "platform_revenue_paise": {
+            "type": "integer"
+          },
+          "rides_settled": {
+            "type": "integer"
+          },
+          "store": {
+            "type": "string"
+          },
+          "trial_balance_paise": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "balanced",
+          "payouts_today"
+        ],
+        "type": "object"
+      },
+      "Match": {
+        "properties": {
+          "alternatives": {
+            "items": {
+              "description": "Runner-up driver",
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "candidates_considered": {
+            "type": "integer"
+          },
+          "driver": {
+            "$ref": "#/components/schemas/Driver"
+          },
+          "latency_ms": {
+            "type": "number"
+          },
+          "requested_tier": {
+            "type": "string"
+          },
+          "ring": {
+            "description": "H3 ring the driver was found in",
+            "type": "integer"
+          },
+          "rings_searched": {
+            "type": "integer"
+          },
+          "score": {
+            "description": "Score breakdown",
+            "type": "object"
+          },
+          "search_radius_km": {
+            "type": "number"
+          },
+          "tier": {
+            "description": "Tier of the assigned car",
+            "type": "string"
+          },
+          "upgraded": {
+            "description": "Free upgrade applied",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "driver"
+        ],
+        "type": "object"
+      },
+      "ParseIntent": {
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "extracted": {
+            "type": "object"
+          },
+          "fallback_mode": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent",
+          "extracted"
+        ],
+        "type": "object"
+      },
+      "ParseIntentInput": {
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "Payout": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "account_type": {
+            "type": "string"
+          },
+          "amount_paise": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "held_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "incident_id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "released_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "sent_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "held_for_review",
+              "sent"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ride_id",
+          "amount_paise",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PayoutList": {
+        "properties": {
+          "payouts": {
+            "items": {
+              "$ref": "#/components/schemas/Payout"
+            },
+            "type": "array"
+          },
+          "rates": {
+            "description": "Split rates in basis points",
+            "type": "object"
+          },
+          "store": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "payouts"
+        ],
+        "type": "object"
+      },
+      "Personas": {
+        "properties": {
+          "demo_mode": {
+            "type": "boolean"
+          },
+          "personas": {
+            "items": {
+              "description": "Demo rider with saved places",
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "personas"
+        ],
+        "type": "object"
+      },
+      "Pong": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "service"
+        ],
+        "type": "object"
+      },
+      "Posting": {
+        "properties": {
+          "account": {
+            "description": "type:owner",
+            "type": "string"
+          },
+          "account_type": {
+            "type": "string"
+          },
+          "amount_paise": {
+            "description": "Signed; every entry sums to zero",
+            "type": "integer"
+          },
+          "memo": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "amount_paise"
+        ],
+        "type": "object"
+      },
+      "Quote": {
+        "properties": {
+          "base": {
+            "type": "number"
+          },
+          "cell": {
+            "type": "object"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "distance_fare": {
+            "type": "number"
+          },
+          "distance_km": {
+            "type": "number"
+          },
+          "duration_min": {
+            "type": "number"
+          },
+          "eta_source": {
+            "type": "string"
+          },
+          "minimum_applied": {
+            "type": "boolean"
+          },
+          "minimum_fare": {
+            "type": "number"
+          },
+          "subtotal": {
+            "type": "number"
+          },
+          "surge_amount": {
+            "type": "number"
+          },
+          "surge_model": {
+            "type": "string"
+          },
+          "surge_multiplier": {
+            "type": "number"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "tier_label": {
+            "type": "string"
+          },
+          "time_fare": {
+            "type": "number"
+          },
+          "total": {
+            "description": "INR, rounded",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tier",
+          "currency",
+          "total"
+        ],
+        "type": "object"
+      },
+      "QuoteInput": {
+        "properties": {
+          "demand": {
+            "description": "Override cell demand",
+            "type": "integer"
+          },
+          "distance_km": {
+            "description": "With duration_min, instead of pickup/dropoff",
+            "type": "number"
+          },
+          "dropoff": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "duration_min": {
+            "type": "number"
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "supply": {
+            "description": "Override cell supply",
+            "type": "integer"
+          },
+          "tier": {
+            "description": "Default mini",
+            "enum": [
+              "auto",
+              "mini",
+              "sedan",
+              "premium",
+              "xl",
+              "av",
+              "pool"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Refund": {
+        "properties": {
+          "amount_paise": {
+            "type": "integer"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ride_id",
+          "amount_paise",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "Ride": {
+        "properties": {
+          "cancel_reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "distance_km": {
+            "description": "Pickup → drop-off road estimate",
+            "type": "number"
+          },
+          "driver_id": {
+            "description": "Set once matched",
+            "type": "string"
+          },
+          "dropoff": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "eta_seconds": {
+            "description": "Driver → pickup",
+            "type": "number"
+          },
+          "id": {
+            "description": "Ride UUID",
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/RideLeg"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "match_score": {
+            "type": "number"
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "pickup_h3": {
+            "description": "H3 cell of the pickup",
+            "type": "string"
+          },
+          "rider_id": {
+            "type": "string"
+          },
+          "status": {
+            "description": "requested → matched → in_progress → completed, or cancelled",
+            "enum": [
+              "requested",
+              "matched",
+              "in_progress",
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rider_id",
+          "tier",
+          "status",
+          "pickup",
+          "dropoff",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "RideLedger": {
+        "properties": {
+          "breakdown": {
+            "description": "Fare split",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "type": "array"
+          },
+          "payout": {
+            "$ref": "#/components/schemas/Payout"
+          },
+          "ride_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ride_id",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "RideLeg": {
+        "properties": {
+          "distance_km": {
+            "type": "number"
+          },
+          "eta_seconds": {
+            "type": "number"
+          },
+          "from": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "kind": {
+            "enum": [
+              "pickup",
+              "trip"
+            ],
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "to": {
+            "$ref": "#/components/schemas/LatLng"
+          }
+        },
+        "required": [
+          "seq",
+          "kind",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "RideView": {
+        "properties": {
+          "match": {
+            "$ref": "#/components/schemas/Match"
+          },
+          "ride": {
+            "$ref": "#/components/schemas/Ride"
+          }
+        },
+        "required": [
+          "ride"
+        ],
+        "type": "object"
+      },
+      "SafetySignal": {
+        "properties": {
+          "driver_id": {
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "rider_id": {
+            "type": "string"
+          },
+          "severity": {
+            "description": "0..1",
+            "type": "number"
+          },
+          "signal_id": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "triggers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ride_id",
+          "driver_id",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "SchedulePlan": {
+        "properties": {
+          "legs": {
+            "items": {
+              "properties": {
+                "arrive_by": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dropoff": {
+                  "$ref": "#/components/schemas/LatLng"
+                },
+                "dropoff_name": {
+                  "type": "string"
+                },
+                "duration_min": {
+                  "type": "number"
+                },
+                "fare": {
+                  "type": "number"
+                },
+                "passenger": {
+                  "type": "string"
+                },
+                "passenger_name": {
+                  "type": "string"
+                },
+                "pickup": {
+                  "$ref": "#/components/schemas/LatLng"
+                },
+                "pickup_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "pickup_name": {
+                  "type": "string"
+                },
+                "seq": {
+                  "type": "integer"
+                },
+                "tier": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "seq",
+                "pickup",
+                "dropoff",
+                "pickup_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "rider_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "rider_id",
+          "legs"
+        ],
+        "type": "object"
+      },
+      "ScheduledLeg": {
+        "properties": {
+          "arrive_by": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dispatch_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dispatch_tier": {
+            "type": "string"
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "dropoff": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "dropoff_name": {
+            "type": "string"
+          },
+          "duration_min": {
+            "type": "number"
+          },
+          "fare": {
+            "description": "INR",
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "passenger": {
+            "type": "string"
+          },
+          "passenger_name": {
+            "type": "string"
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/LatLng"
+          },
+          "pickup_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pickup_name": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "ride_id": {
+            "type": "string"
+          },
+          "ride_status": {
+            "type": "string"
+          },
+          "rider_id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "status": {
+            "description": "scheduled | dispatched | completed | failed | cancelled",
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plan_id",
+          "rider_id",
+          "seq",
+          "pickup",
+          "dropoff",
+          "pickup_at",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ScheduledList": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "demo_mode": {
+            "type": "boolean"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledLeg"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "legs"
+        ],
+        "type": "object"
+      },
+      "Scope": {
+        "enum": [
+          "rides:read",
+          "rides:write",
+          "pricing:read",
+          "stream:read",
+          "agents:invoke",
+          "ledger:read"
+        ],
+        "type": "string"
+      },
+      "Scopes": {
+        "properties": {
+          "default_rate_limit_per_min": {
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            },
+            "type": "array"
+          },
+          "scopes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "signature": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "scopes",
+          "events"
+        ],
+        "type": "object"
+      },
+      "SettlementFindings": {
+        "properties": {
+          "findings": {
+            "items": {
+              "description": "Flagged entry or payout",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "last_run": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "runs": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "findings"
+        ],
+        "type": "object"
+      },
+      "SignalDecision": {
+        "properties": {
+          "action": {
+            "enum": [
+              "monitor",
+              "check_in",
+              "escalate"
+            ],
+            "type": "string"
+          },
+          "checkin_id": {
+            "type": "string"
+          },
+          "incident_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latency_ms": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "number"
+          },
+          "suppressed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "SimConfig": {
+        "properties": {
+          "active_rides": {
+            "type": "integer"
+          },
+          "auto_demand": {
+            "type": "boolean"
+          },
+          "current_demand_per_min": {
+            "type": "number"
+          },
+          "demand_per_min": {
+            "type": "number"
+          },
+          "drivers": {
+            "type": "integer"
+          },
+          "live_drivers": {
+            "type": "integer"
+          },
+          "router": {
+            "type": "string"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "scenarios": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "spikes": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "running",
+          "drivers"
+        ],
+        "type": "object"
+      },
+      "SimConfigInput": {
+        "properties": {
+          "demand_per_min": {
+            "type": "number"
+          },
+          "drivers": {
+            "description": "0..2000",
+            "type": "integer"
+          },
+          "spike_lat": {
+            "type": "number"
+          },
+          "spike_lng": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "StreamControl": {
+        "properties": {
+          "action": {
+            "enum": [
+              "subscribe",
+              "unsubscribe"
+            ],
+            "type": "string"
+          },
+          "topics": {
+            "items": {
+              "description": "drivers | ops | ride:\u003cid\u003e",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "topics"
+        ],
+        "type": "object"
+      },
+      "StreamFrame": {
+        "properties": {
+          "data": {
+            "description": "drivers: Driver[]; ride:\u003cid\u003e: {ride_id, status, driver, eta_sec}; ops: agent_event | metrics | safety_call | safety_update"
+          },
+          "topic": {
+            "description": "drivers | ops | ride:\u003cid\u003e",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "data"
+        ],
+        "type": "object"
+      },
+      "Supply": {
+        "properties": {
+          "cell": {
+            "description": "H3 cell",
+            "type": "string"
+          },
+          "cells": {
+            "type": "integer"
+          },
+          "demand": {
+            "description": "Open requests nearby",
+            "type": "integer"
+          },
+          "rings": {
+            "type": "integer"
+          },
+          "supply": {
+            "description": "Idle drivers nearby",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cell",
+          "supply",
+          "demand"
+        ],
+        "type": "object"
+      },
+      "SupplySnapshot": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "drivers": {
+            "items": {
+              "properties": {
+                "lat": {
+                  "type": "number"
+                },
+                "lng": {
+                  "type": "number"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "lat",
+                "lng",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "requests": {
+            "items": {
+              "properties": {
+                "at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "lat": {
+                  "type": "number"
+                },
+                "lng": {
+                  "type": "number"
+                },
+                "matched": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "lat",
+                "lng"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "window_s": {
+            "description": "Request window in seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "as_of",
+          "drivers",
+          "requests"
+        ],
+        "type": "object"
+      },
+      "SurgeMap": {
+        "description": "H3 resolution-8 cells with surge multiplier and boundary (Surge Equilibrium agent, refreshed every 30 s)",
+        "type": "object"
+      },
+      "Suspension": {
+        "properties": {
+          "driver_id": {
+            "type": "string"
+          },
+          "suspended": {
+            "type": "boolean"
+          },
+          "suspension": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "Tier": {
+        "description": "Vehicle tier",
+        "enum": [
+          "auto",
+          "mini",
+          "sedan",
+          "premium",
+          "xl",
+          "av",
+          "pool"
+        ],
+        "type": "string"
+      },
+      "Tiers": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "surge_cap": {
+            "type": "number"
+          },
+          "tiers": {
+            "additionalProperties": {
+              "properties": {
+                "base": {
+                  "type": "number"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "per_km": {
+                  "type": "number"
+                },
+                "per_min": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "currency",
+          "tiers"
+        ],
+        "type": "object"
+      },
+      "Topup": {
+        "properties": {
+          "amount_paise": {
+            "description": "\u003e 0",
+            "type": "integer"
+          },
+          "idempotency_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_paise"
+        ],
+        "type": "object"
+      },
+      "TopupResult": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/Entry"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          }
+        },
+        "required": [
+          "entry",
+          "wallet"
+        ],
+        "type": "object"
+      },
+      "TrialBalance": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "balanced": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "integer"
+          },
+          "postings": {
+            "type": "integer"
+          },
+          "total_paise": {
+            "description": "Always 0",
+            "type": "integer"
+          },
+          "types": {
+            "items": {
+              "description": "Per account type",
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "total_paise",
+          "balanced",
+          "types"
+        ],
+        "type": "object"
+      },
+      "Wallet": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "description": "Account balance",
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "balance_paise": {
+            "type": "integer"
+          },
+          "held_paise": {
+            "type": "integer"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "paid_out_paise": {
+            "type": "integer"
+          },
+          "payouts": {
+            "items": {
+              "$ref": "#/components/schemas/Payout"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "balance_paise"
+        ],
+        "type": "object"
+      },
+      "Webhook": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEvent"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "events",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "WebhookEvent": {
+        "enum": [
+          "ride.completed",
+          "incident.opened",
+          "payout.sent"
+        ],
+        "type": "string"
+      },
+      "WebhookList": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "webhooks": {
+            "items": {
+              "$ref": "#/components/schemas/Webhook"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "webhooks"
+        ],
+        "type": "object"
+      },
+      "WebhookPayload": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "data": {
+            "description": "ride.completed: Ride; incident.opened: incident summary; payout.sent: Payout"
+          },
+          "id": {
+            "description": "evt_…, stable across retries (X-HexaGo-Delivery)",
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "created_at",
+          "data"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "apiKeyHeader": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
+      "apiKeyQuery": {
+        "description": "For WebSocket clients",
+        "in": "query",
+        "name": "api_key",
+        "type": "apiKey"
+      },
+      "bearerAuth": {
+        "bearerFormat": "hxg_…",
+        "description": "API key as a bearer token",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "One gateway (dispatch-go) serves every endpoint; `/v1/agents/*`, `/v1/pricing/*` and the Safety Sentinel's `/v1/safety/*` endpoints are proxied to agents-py (marked `x-served-by: agents-py`).\n\n**Auth.** Create a key with `POST /v1/developer/keys` and send it as `Authorization: Bearer hxg_…` (or `X-API-Key`, or `?api_key=` on WebSockets). Each operation lists the scope it needs in `x-required-scope`. Keyed requests are rate limited per key (token bucket, 60/min by default) and answer with `X-RateLimit-*` headers. Requests without a key are the first-party path (the HexaGo apps and internal services); a keyless browser request from an origin outside the CORS allow-list gets 401.\n\nMoney is in integer paise (1 INR = 100 paise) on the ledger and in rupees on quotes.",
+    "license": {
+      "identifier": "LicenseRef-HexaGo-Demo",
+      "name": "Proprietary (demo)"
+    },
+    "summary": "AI-native ride hailing: rides, live stream, booking agent, pricing, safety, ledger and the agent swarm.",
+    "title": "HexaGo Public API",
+    "version": "1.0.0"
+  },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "openapi": "3.1.0",
+  "paths": {
+    "/docs": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "getDocs",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "HTML page"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Swagger UI",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "getHealth",
+        "parameters": [
+          {
+            "description": "fresh = run a live Redis check first",
+            "in": "query",
+            "name": "redis",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Healthy"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Liveness and component status",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "getPrometheusMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus text exposition"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Prometheus metrics",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "getOpenAPI",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OpenAPI document"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "This OpenAPI 3.1 document",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/track/{token}": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "getTrackedLocation",
+        "parameters": [
+          {
+            "description": "Share token",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Location"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Live location behind a share link",
+        "tags": [
+          "Safety"
+        ]
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listAgents",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentList"
+                }
+              }
+            },
+            "description": "Roster"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "The 11-agent roster with status and recent decisions",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/booking/confirm": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "confirmBooking",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Scheduled rides"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Upstream (agents-py or a dependency) failed"
+          }
+        },
+        "summary": "Confirm a plan: its legs are scheduled and dispatched",
+        "tags": [
+          "Booking"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/booking/parse": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "parseBooking",
+        "parameters": [
+          {
+            "description": "DEMO_MODE only: skip the LLM",
+            "in": "query",
+            "name": "force_fallback",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingParse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingPlan"
+                }
+              }
+            },
+            "description": "A plan, or a clarifying question"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Turn one sentence into a priced, timed ride plan",
+        "tags": [
+          "Booking"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/booking/personas": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listPersonas",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Personas"
+                }
+              }
+            },
+            "description": "Personas"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Demo rider personas and saved places",
+        "tags": [
+          "Booking"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/booking/voice": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "transcribeBooking",
+        "requestBody": {
+          "content": {
+            "audio/webm": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Raw audio body, audio/* content type, up to 10 MB",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Transcript"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Payload too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unsupported media type"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Upstream (agents-py or a dependency) failed"
+          }
+        },
+        "summary": "Transcribe a spoken request (providers with a transcription API)",
+        "tags": [
+          "Booking"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/events": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listAgentEvents",
+        "parameters": [
+          {
+            "description": "1..500, default 50",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEventList"
+                }
+              }
+            },
+            "description": "Events"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Agent audit events, newest first",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/llm/budget": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getLLMBudget",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMBudget"
+                }
+              }
+            },
+            "description": "Budget"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "LLM calls and tokens used today vs the guardrails",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/parse-intent": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "parseIntent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParseIntentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParseIntent"
+                }
+              }
+            },
+            "description": "Extracted fields"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Legacy single-shot intent parser",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/ping": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "pingAgents",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pong"
+                }
+              }
+            },
+            "description": "Pong"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "agents-py ping",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/settlement/findings": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getSettlementFindings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementFindings"
+                }
+              }
+            },
+            "description": "Findings"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Settlement agent audit findings",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/agents/settlement/scan": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "runSettlementScan",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementFindings"
+                }
+              }
+            },
+            "description": "Findings"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Run a settlement audit now",
+        "tags": [
+          "Agents"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/developer/keys": {
+      "post": {
+        "description": "Limited to 5 keys per minute per client IP. Keys are stored as SHA-256 hashes.\n\nPublic: no API key needed.",
+        "operationId": "createKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKey"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedKey"
+                }
+              }
+            },
+            "description": "The new key"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Create an API key (self-serve demo; the key is shown once)",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/developer/keys/me": {
+      "delete": {
+        "description": "Needs an API key (any scope).",
+        "operationId": "revokeMyKey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "revoked"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "Revoke the calling key (and its webhooks)",
+        "tags": [
+          "Developer"
+        ]
+      },
+      "get": {
+        "description": "Needs an API key (any scope).",
+        "operationId": "getMyKey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "Key"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "The calling key",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/developer/scopes": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "listScopes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scopes"
+                }
+              }
+            },
+            "description": "Scopes"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Scopes, webhook events and the signature scheme",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/developer/webhooks": {
+      "get": {
+        "description": "Needs an API key (any scope).",
+        "operationId": "listWebhooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookList"
+                }
+              }
+            },
+            "description": "Webhooks"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "The calling key's webhooks",
+        "tags": [
+          "Developer"
+        ]
+      },
+      "post": {
+        "description": "Deliveries are POSTs with `X-HexaGo-Signature: sha256=hex(HMAC-SHA256(secret, timestamp + \".\" + body))` and `X-HexaGo-Timestamp`; non-2xx answers are retried 3 times with exponential backoff (1 s, 2 s, 4 s). Private, loopback and link-local targets are refused.\n\nNeeds an API key (any scope).",
+        "operationId": "createWebhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhook"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedWebhook"
+                }
+              }
+            },
+            "description": "Webhook"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "Subscribe a URL to events (the signing secret is shown once)",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/developer/webhooks/{id}": {
+      "delete": {
+        "description": "Needs an API key (any scope).",
+        "operationId": "deleteWebhook",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "Delete a webhook",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/developer/webhooks/{id}/deliveries": {
+      "get": {
+        "description": "Needs an API key (any scope).",
+        "operationId": "listDeliveries",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryList"
+                }
+              }
+            },
+            "description": "Deliveries"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "Recent deliveries to a webhook",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/developer/webhooks/{id}/test": {
+      "post": {
+        "description": "Needs an API key (any scope).",
+        "operationId": "testWebhook",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Queued"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          }
+        ],
+        "summary": "Queue a ping delivery",
+        "tags": [
+          "Developer"
+        ]
+      }
+    },
+    "/v1/drivers/{id}/status": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "updateDriverStatus",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriverStatusInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverView"
+                }
+              }
+            },
+            "description": "Driver state"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Driver telemetry / status update (creates the driver on first call)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/eta": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getETA",
+        "parameters": [
+          {
+            "description": "",
+            "in": "query",
+            "name": "from_lat",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "from_lng",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "to_lat",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "to_lng",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ETA"
+                }
+              }
+            },
+            "description": "Estimate"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Road distance and duration between two points",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/ledger/entries": {
+      "get": {
+        "description": "Scope `ledger:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "listEntries",
+        "parameters": [
+          {
+            "description": "Return this ride's entries, fare breakdown and payout",
+            "in": "query",
+            "name": "ride_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "RFC 3339 lower bound",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RideLedger"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EntryList"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Entries (EntryList), or RideLedger when ride_id is set"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Journal entries (or one ride's entries with ride_id)",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "ledger:read"
+      }
+    },
+    "/v1/ledger/payouts": {
+      "get": {
+        "description": "Scope `ledger:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "listPayouts",
+        "parameters": [
+          {
+            "description": "pending | held_for_review | sent",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "driver_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "incident_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "ride_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "RFC 3339 lower bound",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutList"
+                }
+              }
+            },
+            "description": "Payouts"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Driver / operator payouts",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "ledger:read"
+      }
+    },
+    "/v1/ledger/refunds": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "createRefund",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Refund"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entry"
+                }
+              }
+            },
+            "description": "Refund entry"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Refund a ride (a reversal entry)",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/ledger/summary": {
+      "get": {
+        "description": "Scope `ledger:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getLedgerSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerSummary"
+                }
+              }
+            },
+            "description": "Summary"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Money summary for today",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "ledger:read"
+      }
+    },
+    "/v1/ledger/trial-balance": {
+      "get": {
+        "description": "Scope `ledger:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getTrialBalance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrialBalance"
+                }
+              }
+            },
+            "description": "Trial balance"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Trial balance (always sums to zero)",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "ledger:read"
+      }
+    },
+    "/v1/metrics/counters": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getDailyCounters",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Counters"
+                }
+              }
+            },
+            "description": "Counters"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Matches, settled rides and agent decisions today (IST)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/metrics/dispatch": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getDispatchMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchMetrics"
+                }
+              }
+            },
+            "description": "Metrics"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Dispatch latency percentiles and fleet counts",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/ping": {
+      "get": {
+        "description": "Public: no API key needed.",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pong"
+                }
+              }
+            },
+            "description": "Pong"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Gateway ping",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/v1/pricing/quote": {
+      "post": {
+        "description": "Scope `pricing:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getQuote",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            },
+            "description": "Quote"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Fare quote with surge",
+        "tags": [
+          "Pricing"
+        ],
+        "x-required-scope": "pricing:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/pricing/surge-map": {
+      "get": {
+        "description": "Scope `pricing:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getSurgeMap",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurgeMap"
+                }
+              }
+            },
+            "description": "Surge map"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Surge multipliers per H3 cell",
+        "tags": [
+          "Pricing"
+        ],
+        "x-required-scope": "pricing:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/pricing/tiers": {
+      "get": {
+        "description": "Scope `pricing:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getTiers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tiers"
+                }
+              }
+            },
+            "description": "Tiers"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Rate card",
+        "tags": [
+          "Pricing"
+        ],
+        "x-required-scope": "pricing:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/rides": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "createRide",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRide"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideView"
+                }
+              }
+            },
+            "description": "Matched: ride and match details"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideView"
+                }
+              }
+            },
+            "description": "No driver yet: stored as an open request"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Request a ride (matched synchronously when a driver is free)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/rides/{id}": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getRide",
+        "parameters": [
+          {
+            "description": "Ride UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideView"
+                }
+              }
+            },
+            "description": "The ride"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Get a ride",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/rides/{id}/cancel": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "cancelRide",
+        "parameters": [
+          {
+            "description": "Ride UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideView"
+                }
+              }
+            },
+            "description": "Cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Cancel a ride",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/safety/checkins": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listCheckins",
+        "parameters": [
+          {
+            "description": "pending (default) | all | answered | expired",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinList"
+                }
+              }
+            },
+            "description": "Check-ins"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Rider safety check-ins",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/checkins/{checkin_id}": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getCheckin",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "checkin_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Checkin"
+                }
+              }
+            },
+            "description": "Check-in"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "A check-in",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/checkins/{checkin_id}/reply": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "replyCheckin",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "checkin_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "transcript": {
+                    "description": "What the rider said, e.g. \"I'm fine\"",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Outcome"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "The rider answers a safety call",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:write",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/drivers/{id}": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getDriverSuspension",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Suspension"
+                }
+              }
+            },
+            "description": "State"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Driver suspension state",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/safety/drivers/{id}/suspend": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "suspendDriver",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "actor": {
+                    "type": "string"
+                  },
+                  "incident_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "incident_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Suspended"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Suspend a driver (Safety Sentinel escalation)",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/safety/drivers/{id}/unsuspend": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "unsuspendDriver",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "confirmed_by": {
+                    "enum": [
+                      "ops_supervisor"
+                    ],
+                    "type": "string"
+                  },
+                  "incident_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "incident_id",
+                  "confirmed_by"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Released"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Release a driver (Ops Supervisor confirmation required)",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/safety/emergency/dispatch": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "dispatchEmergency",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Simulated dispatch"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Simulated emergency services dispatch",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/safety/emergency/log": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getEmergencyLog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "records": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "records"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Records"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Simulated emergency records",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/safety/emergency/notify-contact": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "notifyEmergencyContact",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Simulated SMS"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Simulated emergency-contact SMS",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/safety/incidents": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listIncidents",
+        "parameters": [
+          {
+            "description": "",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentList"
+                }
+              }
+            },
+            "description": "Incidents"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Safety incidents, newest first",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/incidents/{incident_id}": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getIncident",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetail"
+                }
+              }
+            },
+            "description": "Incident"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "An incident with its timeline",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/incidents/{incident_id}/resolve": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "resolveIncident",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  },
+                  "requested_by": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            },
+            "description": "Resolved"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Upstream (agents-py or a dependency) failed"
+          }
+        },
+        "summary": "Resolve an incident (Ops Supervisor confirms)",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/publish": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "publishSafetyFrame",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "data": {
+                    "type": "object"
+                  },
+                  "topic": {
+                    "description": "ops | ride:\u003cid\u003e",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "topic",
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Published"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Publish a safety_call / safety_update frame on the stream",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/safety/signal": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "submitSafetySignal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafetySignal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalDecision"
+                }
+              }
+            },
+            "description": "Decision"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Submit a detector signal to the Safety Sentinel",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/safety/signals": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "listSafetySignals",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Signals"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Recent detector signals and thresholds",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/safety/track": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "createTrackLink",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "driver_id": {
+                    "type": "string"
+                  },
+                  "incident_id": {
+                    "type": "string"
+                  },
+                  "ride_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "driver_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "url"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Link"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Create a live-location share link",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/safety/vehicle-path/{driverID}": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getVehiclePath",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "driverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "RFC 3339 lower bound",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Path"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Recent telemetry of a vehicle, oldest first",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/scheduled": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "listScheduled",
+        "parameters": [
+          {
+            "description": "",
+            "in": "query",
+            "name": "rider_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledList"
+                }
+              }
+            },
+            "description": "Legs"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Scheduled legs of confirmed booking plans",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      },
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "schedulePlan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchedulePlan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledList"
+                }
+              }
+            },
+            "description": "Scheduled legs"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict with the current state"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Schedule the legs of a plan (the Booking Intent agent calls this on confirm)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/sim/config": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getSimConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimConfig"
+                }
+              }
+            },
+            "description": "Status"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Fleet simulator status (DEMO_MODE)",
+        "tags": [
+          "Simulator"
+        ],
+        "x-required-scope": "rides:read"
+      },
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "configureSim",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimConfigInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimConfig"
+                }
+              }
+            },
+            "description": "New status"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Resize the fleet, change demand or add a demand spike",
+        "tags": [
+          "Simulator"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/sim/scenario/{name}": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "runScenario",
+        "parameters": [
+          {
+            "description": "rush_hour | rain_storm | concert_exit | safety_incident",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimConfig"
+                }
+              }
+            },
+            "description": "Status"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Trigger a scenario",
+        "tags": [
+          "Simulator"
+        ],
+        "x-required-scope": "agents:invoke"
+      }
+    },
+    "/v1/stream": {
+      "get": {
+        "description": "Upgrade to a WebSocket, then send `{\"action\":\"subscribe\",\"topics\":[\"ride:\u003cid\u003e\"]}` (schema StreamControl). Frames are `{\"topic\",\"data\"}` (schema StreamFrame), batched once per second: `drivers` (positions), `ride:\u003cid\u003e` (status, driver position, ETA), `ops` (agent events and metrics). Browsers cannot set headers on WebSockets, so pass the key as `?api_key=hxg_…`.\n\nScope `stream:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "openStream",
+        "parameters": [
+          {
+            "description": "API key (WebSocket clients)",
+            "in": "query",
+            "name": "api_key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching protocols"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Live WebSocket stream (drivers, ride:\u003cid\u003e, ops)",
+        "tags": [
+          "Stream"
+        ],
+        "x-required-scope": "stream:read"
+      }
+    },
+    "/v1/supply": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getSupply",
+        "parameters": [
+          {
+            "description": "",
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "lng",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Supply"
+                }
+              }
+            },
+            "description": "Cell load"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Idle drivers and open requests around a point (H3)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/supply/snapshot": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getSupplySnapshot",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplySnapshot"
+                }
+              }
+            },
+            "description": "Snapshot"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Every vehicle's position and the recent ride requests (pricing models bin these)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/wallets/{owner}": {
+      "get": {
+        "description": "Scope `ledger:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getWallet",
+        "parameters": [
+          {
+            "description": "Rider, driver or operator id",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Wallet"
+                }
+              }
+            },
+            "description": "Wallet"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Balances and recent payouts of a rider, driver or operator",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "ledger:read"
+      }
+    },
+    "/v1/wallets/{owner}/topup": {
+      "post": {
+        "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "topupWallet",
+        "parameters": [
+          {
+            "description": "Rider id",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Topup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopupResult"
+                }
+              }
+            },
+            "description": "Entry and wallet"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Top up a rider wallet (DEMO_MODE only)",
+        "tags": [
+          "Ledger"
+        ],
+        "x-required-scope": "rides:write"
+      }
+    },
+    "/v1/ws": {
+      "get": {
+        "description": "Scope `stream:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "openEchoSocket",
+        "responses": {
+          "101": {
+            "description": "Switching protocols"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Echo WebSocket (connectivity check)",
+        "tags": [
+          "Stream"
+        ],
+        "x-required-scope": "stream:read"
+      }
+    }
+  },
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    },
+    {
+      "apiKeyHeader": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Production gateway (Render)",
+      "url": "https://dispatch-go.onrender.com"
+    },
+    {
+      "description": "Local dev",
+      "url": "http://localhost:8080"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Ride requests, drivers, ETAs, supply and scheduled legs",
+      "name": "Rides"
+    },
+    {
+      "description": "Live WebSocket stream",
+      "name": "Stream"
+    },
+    {
+      "description": "Booking Intent agent (natural-language booking)",
+      "name": "Booking"
+    },
+    {
+      "description": "Fare quotes and the rate card",
+      "name": "Pricing"
+    },
+    {
+      "description": "Safety Sentinel: signals, incidents, check-ins, suspensions",
+      "name": "Safety"
+    },
+    {
+      "description": "Double-entry clearing ledger, wallets and payouts",
+      "name": "Ledger"
+    },
+    {
+      "description": "The 11-agent swarm: roster, audit events, LLM budget, settlement",
+      "name": "Agents"
+    },
+    {
+      "description": "Fleet simulator (DEMO_MODE)",
+      "name": "Simulator"
+    },
+    {
+      "description": "API keys and webhooks",
+      "name": "Developer"
+    },
+    {
+      "description": "Probes, metrics and documentation",
+      "name": "System"
+    }
+  ],
+  "webhooks": {
+    "incident.opened": {
+      "post": {
+        "operationId": "webhook_incident_opened",
+        "parameters": [
+          {
+            "description": "sha256=hex(HMAC-SHA256(secret, X-HexaGo-Timestamp + \".\" + raw body))",
+            "in": "header",
+            "name": "X-HexaGo-Signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unix seconds",
+            "in": "header",
+            "name": "X-HexaGo-Timestamp",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-HexaGo-Event",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event id",
+            "in": "header",
+            "name": "X-HexaGo-Delivery",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted; anything else is retried up to 3 times (1 s, 2 s, 4 s)"
+          }
+        },
+        "summary": "The Safety Sentinel opened an incident (data: incident summary)"
+      }
+    },
+    "payout.sent": {
+      "post": {
+        "operationId": "webhook_payout_sent",
+        "parameters": [
+          {
+            "description": "sha256=hex(HMAC-SHA256(secret, X-HexaGo-Timestamp + \".\" + raw body))",
+            "in": "header",
+            "name": "X-HexaGo-Signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unix seconds",
+            "in": "header",
+            "name": "X-HexaGo-Timestamp",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-HexaGo-Event",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event id",
+            "in": "header",
+            "name": "X-HexaGo-Delivery",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted; anything else is retried up to 3 times (1 s, 2 s, 4 s)"
+          }
+        },
+        "summary": "A driver / operator payout left the ledger (data: Payout)"
+      }
+    },
+    "ride.completed": {
+      "post": {
+        "operationId": "webhook_ride_completed",
+        "parameters": [
+          {
+            "description": "sha256=hex(HMAC-SHA256(secret, X-HexaGo-Timestamp + \".\" + raw body))",
+            "in": "header",
+            "name": "X-HexaGo-Signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unix seconds",
+            "in": "header",
+            "name": "X-HexaGo-Timestamp",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-HexaGo-Event",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event id",
+            "in": "header",
+            "name": "X-HexaGo-Delivery",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted; anything else is retried up to 3 times (1 s, 2 s, 4 s)"
+          }
+        },
+        "summary": "A ride was completed (data: Ride)"
+      }
+    }
+  }
+}

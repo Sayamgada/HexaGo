@@ -59,6 +59,9 @@ type Hub struct {
 	metricsMu sync.RWMutex
 	metricsFn func(context.Context) (any, error)
 
+	tapsMu sync.RWMutex
+	taps   []func(topic string, data any)
+
 	dropped atomic.Uint64
 }
 
@@ -146,8 +149,23 @@ func (h *Hub) pollMetrics(ctx context.Context) {
 	h.PublishLocal(TopicOps, data)
 }
 
+// OnPublish registers fn to observe every Publish on this instance (not frames
+// arriving from other instances), synchronously and before fan-out. Webhooks
+// use it to turn ledger events into payout.sent deliveries.
+func (h *Hub) OnPublish(fn func(topic string, data any)) {
+	h.tapsMu.Lock()
+	h.taps = append(h.taps, fn)
+	h.tapsMu.Unlock()
+}
+
 // Publish sends data on topic to subscribers on every instance.
 func (h *Hub) Publish(topic string, data any) {
+	h.tapsMu.RLock()
+	taps := h.taps
+	h.tapsMu.RUnlock()
+	for _, fn := range taps {
+		fn(topic, data)
+	}
 	frame, err := Encode(topic, data)
 	if err != nil {
 		h.log.Printf("WARN stream: encode %s: %v", topic, err)

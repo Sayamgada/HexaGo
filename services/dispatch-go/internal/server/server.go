@@ -17,6 +17,7 @@ import (
 	"github.com/hexago/hexago/services/dispatch-go/internal/config"
 	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 	"github.com/hexago/hexago/services/dispatch-go/internal/counters"
+	"github.com/hexago/hexago/services/dispatch-go/internal/developer"
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
 	"github.com/hexago/hexago/services/dispatch-go/internal/ledger"
@@ -44,6 +45,7 @@ type RouterOptions struct {
 	Counters  *counters.Cache
 	// AgentsWake bounds proxy retries while agents-py wakes (0 = DefaultAgentsWakeTimeout).
 	AgentsWake time.Duration
+	Developer  *developer.Service
 }
 
 // WithRedisMonitor reports m's latest Redis check on /healthz;
@@ -117,9 +119,12 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	allow := cors.Parse(cfg.CORSOrigins)
 	upgrader := websocket.Upgrader{
 		// Browsers always send Origin; native clients (desktop, Android) usually do not.
+		// A request authenticated with an API key may come from any origin: the
+		// key is explicit, so there are no ambient credentials to hijack.
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
-			return origin == "" || allow.Allowed(origin)
+			_, keyed := developer.KeyFrom(r.Context())
+			return origin == "" || keyed || allow.Allowed(origin)
 		},
 	}
 
@@ -130,6 +135,13 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(allow.Middleware)
+
+	// API keys: scope checks and per-key rate limits; keyless first-party requests pass.
+	if options.Developer == nil {
+		options.Developer = developer.New(developer.Options{Origin: allow.Allowed})
+		go options.Developer.Run(context.Background())
+	}
+	r.Use(options.Developer.Middleware)
 
 	// Liveness / readiness probe
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +169,8 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 				"stream_broker":  hub.BrokerKind(),
 				"stream_clients": hub.Clients(),
 				"simulator":      options.Sim != nil && options.Sim.Status().Running,
+				"api_keys":       options.Developer.StoreKind(),
+				"rate_limiter":   options.Developer.LimiterKind(),
 			},
 			"redis": redisStatus,
 			"city_center": map[string]float64{
@@ -165,6 +179,10 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 			},
 		})
 	})
+
+	// Public API platform: OpenAPI document, Swagger UI, keys and webhooks.
+	mountDocs(r)
+	options.Developer.Routes(r)
 
 	// Prometheus metrics
 	r.Handle("/metrics", promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{}))
@@ -232,6 +250,7 @@ func NewRouter(cfg *config.Config, opts ...Option) *chi.Mux {
 	options.Ledger = mountLedger(r, options.Ledger, cfg, svc, options.Safety, hub)
 	options.Scheduler = mountScheduler(r, options.Scheduler, cfg, svc, agentsProxy)
 	mountCounters(r, options.Counters, svc, options.Ledger)
+	attachWebhooks(options.Developer, svc, options.Safety, hub, options.Ledger)
 
 	return r
 }

@@ -135,6 +135,7 @@ type Service struct {
 
 	onSuspend []SuspensionHook // see OnSuspension (hooks.go)
 	onRelease []SuspensionHook
+	onIncident []func(context.Context, IncidentOpened) // see OnIncidentOpened (hooks.go)
 }
 
 // New builds a Service.
@@ -222,53 +223,58 @@ func (s *Service) Emit(ctx context.Context, sig Signal) {
 				s.log.Printf("WARN safety: publish %s on redis: %v", sig.ID, err)
 			}
 		}
-		s.post(bg, sig.ID, body)
+		if out := s.post(bg, sig.ID, body); out != nil {
+			s.incidentFromReply(bg, sig, out)
+		}
 	}()
 }
 
-// post delivers the signal to agents-py, retrying once.
-func (s *Service) post(ctx context.Context, id string, body []byte) {
+// post delivers the signal to agents-py, retrying once, and returns the
+// Safety Sentinel's reply (nil when delivery failed).
+func (s *Service) post(ctx context.Context, id string, body []byte) []byte {
 	if s.agents == "" {
-		return
+		return nil
 	}
 	var err error
+	var out []byte
 	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return
+				return nil
 			case <-time.After(postRetryWait):
 			}
 		}
-		if err = s.postOnce(ctx, body); err == nil {
+		if out, err = s.postOnce(ctx, body); err == nil {
 			s.mu.Lock()
 			s.posted++
 			s.mu.Unlock()
-			return
+			return out
 		}
 	}
 	s.mu.Lock()
 	s.postErrors++
 	s.mu.Unlock()
 	s.log.Printf("WARN safety: post signal %s to agents-py: %v", id, err)
+	return nil
 }
 
-func (s *Service) postOnce(ctx context.Context, body []byte) error {
+func (s *Service) postOnce(ctx context.Context, body []byte) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.agents+"/v1/safety/signal", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	out, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return nil
+	return out, nil
 }
 
 // Signals returns the most recent signals, newest first.

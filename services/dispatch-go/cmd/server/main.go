@@ -12,8 +12,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/hexago/hexago/services/dispatch-go/internal/config"
+	"github.com/hexago/hexago/services/dispatch-go/internal/cors"
 	"github.com/hexago/hexago/services/dispatch-go/internal/counters"
+	"github.com/hexago/hexago/services/dispatch-go/internal/developer"
 	"github.com/hexago/hexago/services/dispatch-go/internal/dispatch"
 	"github.com/hexago/hexago/services/dispatch-go/internal/fleet"
 	"github.com/hexago/hexago/services/dispatch-go/internal/geo"
@@ -45,6 +49,7 @@ func main() {
 	var schedRepo scheduler.Repo
 	var ledgerStore ledger.Store = ledger.NewMemory()
 	var dailyCounters *counters.Cache // nil: the router counts the in-memory stores
+	var devStore developer.Store = developer.NewMemory()
 	if cfg.DatabaseURL != "" {
 		pg, err := store.OpenPostgres(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -53,6 +58,7 @@ func main() {
 			defer pg.Close()
 			opts.Store = pg
 			ledgerStore = ledger.NewPostgres(pg.Pool())
+			devStore = developer.NewPostgres(pg.Pool())
 			telemetry = store.NewPostgresTelemetry(pg.Pool())
 			schedRepo = scheduler.NewPGRepo(pg.Pool())
 			dailyCounters = counters.NewCache(counters.NewPostgres(pg.Pool()), 0, nil)
@@ -138,8 +144,24 @@ func main() {
 	ledger.Attach(led, svc, safetySvc)
 	log.Printf("Ledger: %s store", led.StoreKind())
 
+	// Public API platform: hashed keys (Postgres), per-key token buckets (Redis), webhooks.
+	var limiter developer.Limiter = developer.NewMemoryLimiter(nil)
+	if cfg.RedisURL != "" {
+		if opt, err := redis.ParseURL(cfg.RedisURL); err != nil {
+			log.Printf("WARN developer: REDIS_URL unparsable, rate limits are per instance: %v", err)
+		} else {
+			rc := redis.NewClient(opt)
+			defer rc.Close()
+			limiter = developer.NewRedisLimiter(rc, nil)
+		}
+	}
+	allow := cors.Parse(cfg.CORSOrigins)
+	dev := developer.New(developer.Options{Store: devStore, Limiter: limiter, Origin: allow.Allowed})
+	go dev.Run(ctx)
+	log.Printf("Developer platform: keys=%s rate-limit=%s", dev.StoreKind(), dev.LimiterKind())
+
 	routerOpts := []server.Option{server.WithDispatch(svc, reg), server.WithStream(hub), server.WithRedisMonitor(redisMon),
-		server.WithSafety(safetySvc), server.WithLedger(led)}
+		server.WithSafety(safetySvc), server.WithLedger(led), server.WithDeveloper(dev)}
 	if dailyCounters != nil {
 		routerOpts = append(routerOpts, server.WithCounters(dailyCounters))
 	}

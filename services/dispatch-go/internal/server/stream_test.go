@@ -38,8 +38,28 @@ func TestStreamAcceptsWebAppOrigin(t *testing.T) {
 	if err == nil {
 		t.Fatal("foreign origin was allowed to open the stream")
 	}
-	if resp == nil || resp.StatusCode != http.StatusForbidden {
+	// Keyless third-party origins are stopped by the API-key middleware (401)
+	// before the upgrader's origin check (403).
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("foreign origin: %v", resp)
+	}
+}
+
+func TestStreamFromForeignOriginWithKey(t *testing.T) {
+	srv := httptest.NewServer(server.NewRouter(testConfig()))
+	defer srv.Close()
+	key := createKey(t, srv.URL, `{"scopes":["stream:read"]}`)
+	h := http.Header{"Origin": []string{"https://partner.example.com"}}
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL(srv)+"?api_key="+key, h)
+	if err != nil {
+		t.Fatalf("keyed foreign origin rejected: %v (%v)", err, resp)
+	}
+	conn.Close()
+	// A key without stream:read is refused.
+	other := createKey(t, srv.URL, `{"scopes":["rides:read"]}`)
+	_, resp, err = websocket.DefaultDialer.Dial(wsURL(srv)+"?api_key="+other, nil)
+	if err == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("key without stream:read: %v %v", err, resp)
 	}
 }
 
