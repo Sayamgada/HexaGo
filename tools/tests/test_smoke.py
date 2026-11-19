@@ -220,6 +220,94 @@ def test_not_json_is_a_failure():
         smoke.check_surge_map(c)
 
 
+# ---------------------------------------------------------------- legal & ops report
+
+
+def legal_routes(old_cap=2.5, maps=None, enabled=True, new_cap=1.5):
+    state = {"maps": list(maps or [{"as_of": "t0", "max_multiplier": 2.5}, {"as_of": "t1", "max_multiplier": 1.5}]),
+             "ingests": []}
+
+    def surge(body, headers):
+        m = state["maps"][0] if len(state["maps"]) == 1 else state["maps"].pop(0)
+        return resp(body=m)
+
+    def ingest(body, headers):
+        state["ingests"].append(body)
+        cap = new_cap if len(state["ingests"]) == 1 else old_cap
+        return resp(body={"source": "llm", "model": "gemini/x", "diff": [], "jurisdiction": {
+            "rules": {"max_surge_multiplier": cap}}})
+
+    routes = {
+        ("GET", "/v1/legal/jurisdictions"): resp(body={"enabled": enabled, "pricing_city": "bengaluru", "jurisdictions": [
+            {"city": "bengaluru", "rules": {"max_surge_multiplier": old_cap}}]}),
+        ("POST", "/v1/legal/ingest"): ingest,
+        ("GET", "/v1/pricing/surge-map"): surge,
+    }
+    return routes, state
+
+
+def test_legal_cap_applies_to_surge_map_and_is_restored():
+    routes, state = legal_routes()
+    c, _ = ctx_for(routes)
+    assert smoke.check_legal_surge_cap(c) == ("llm (gemini/x): cap 2.5x -> 1.5x, surge-map max 1.5x "
+                                              "after recompute, restored 2.5x")
+    assert state["ingests"][0] == {"city": "bengaluru", "text": smoke.SAMPLE_NOTICE}
+    assert "surge cap of 2.5x" in state["ingests"][1]["text"]
+
+
+def test_legal_cap_keep_and_already_at_cap():
+    routes, state = legal_routes(old_cap=1.5)
+    c, _ = ctx_for(routes)
+    assert smoke.check_legal_surge_cap(c).endswith("after recompute")
+    assert len(state["ingests"]) == 1  # nothing to restore
+    routes, state = legal_routes()
+    c, _ = ctx_for(routes, restore_legal=False)
+    assert smoke.check_legal_surge_cap(c).endswith("after recompute, kept")
+    assert len(state["ingests"]) == 1
+
+
+def test_legal_cap_failures():
+    routes, _ = legal_routes(enabled=False)
+    c, _ = ctx_for(routes)
+    with pytest.raises(CheckFailed, match="LEGAL_ENABLED is off"):
+        smoke.check_legal_surge_cap(c)
+    routes, _ = legal_routes(new_cap=2.0)
+    c, _ = ctx_for(routes)
+    with pytest.raises(CheckFailed, match="cap after ingest 2.0, want 1.5"):
+        smoke.check_legal_surge_cap(c)
+    routes, state = legal_routes(maps=[{"as_of": "t0", "max_multiplier": 2.5}, {"as_of": "t1", "max_multiplier": 2.5}])
+    c, _ = ctx_for(routes)
+    with pytest.raises(CheckFailed, match="surge-map max still above 1.5x"):
+        smoke.check_legal_surge_cap(c)
+    assert len(state["ingests"]) == 2  # restored even on failure
+    routes, _ = legal_routes()
+    routes[("GET", "/v1/legal/jurisdictions")] = resp(body={"enabled": True, "jurisdictions": []})
+    c, _ = ctx_for(routes)
+    with pytest.raises(CheckFailed, match="no jurisdiction bengaluru"):
+        smoke.check_legal_surge_cap(c)
+
+
+def test_ops_report():
+    rep = {"id": "opr_1", "generated_at": "2026-11-20T06:00:00Z", "anomalies": [{}], "actions": [{}],
+           "summary_source": "template", "markdown": "# Autonomous Ops Report\n## Human interventions: 0\n"}
+    c, _ = ctx_for({("POST", "/v1/ops/report/run"): resp(body=rep), ("GET", "/v1/ops/report"): resp(body=rep)})
+    assert smoke.check_ops_report(c) == "opr_1: 1 anomalies, 1 auto-actions, 0 human interventions"
+    bad = {**rep, "markdown": "# nope"}
+    c, _ = ctx_for({("POST", "/v1/ops/report/run"): resp(body=bad), ("GET", "/v1/ops/report"): resp(body=bad)})
+    with pytest.raises(CheckFailed, match="Human interventions: 0"):
+        smoke.check_ops_report(c)
+    old = {**rep, "id": "opr_0", "generated_at": "2026-11-20T05:00:00Z"}
+    c, _ = ctx_for({("POST", "/v1/ops/report/run"): resp(body=rep), ("GET", "/v1/ops/report"): resp(body=old)})
+    with pytest.raises(CheckFailed, match="latest report opr_0 is older"):
+        smoke.check_ops_report(c)
+
+
+def test_main_keep_legal_flag():
+    assert smoke.parse_args(["--keep-legal"]).keep_legal is True
+    assert smoke.parse_args([]).keep_legal is False
+
+
+
 # ---------------------------------------------------------------- safety
 
 

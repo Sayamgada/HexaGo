@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # Surge Equilibrium surge-map recompute period; 0 disables the loop (the endpoint still computes on demand).
     SURGE_MAP_INTERVAL_S: float = 30.0
 
+    # The jurisdiction the surge map and fare quotes are priced in (a Legal & Jurisdiction city key).
+    CITY_NAME: str = "Bengaluru"
+    # Legal & Jurisdiction agent: rules table, regulation ingest, surge cap hook. Off -> static caps.
+    LEGAL_ENABLED: bool = True
+    # Ops Supervisor "Autonomous Ops Report": period of the scheduled report; 0 disables the loop.
+    OPS_REPORT_ENABLED: bool = True
+    OPS_REPORT_INTERVAL_S: float = 300.0
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

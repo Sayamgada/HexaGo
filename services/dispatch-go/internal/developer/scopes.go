@@ -30,7 +30,7 @@ var ScopeInfo = map[string]string{
 	ScopeRidesWrite:   "Request and cancel rides, update driver status, schedule legs, reply to safety check-ins, top up wallets and issue refunds.",
 	ScopePricingRead:  "Fare quotes, the rate card and surge data (/v1/pricing/*).",
 	ScopeStreamRead:   "Open the live WebSocket stream (/v1/stream, /v1/ws).",
-	ScopeAgentsInvoke: "Call the agent swarm (/v1/agents/*: booking, roster, events, budget, settlement) and the safety/simulator controls.",
+	ScopeAgentsInvoke: "Call the agent swarm (/v1/agents/*: booking, roster, events, budget, settlement; /v1/legal/*, /v1/ops/*) and the safety/simulator controls.",
 	ScopeLedgerRead:   "Read wallets, journal entries, payouts, the trial balance and the ledger summary.",
 }
 
@@ -70,7 +70,7 @@ func RequiredScope(method, path string) string {
 		return ScopeStreamRead
 	case has("/v1/pricing"):
 		return ScopePricingRead
-	case has("/v1/agents"), has("/v1/sim") && !read:
+	case has("/v1/agents"), has("/v1/legal"), has("/v1/ops"), has("/v1/sim") && !read:
 		return ScopeAgentsInvoke
 	case has("/v1/ledger") || has("/v1/wallets"):
 		if read {

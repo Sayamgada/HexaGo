@@ -32,6 +32,7 @@ import h3
 from pydantic import BaseModel, Field
 
 from src.agents_py.agents.booking.gateway import DispatchGateway, GatewayError
+from src.agents_py.agents.legal.legal_agent import get_surge_cap
 from src.agents_py.agents.pricing.quote import SURGE_CAP, CellLoad, ratio_surge
 from src.agents_py.core.events import EventStore, get_event_store
 from src.agents_py.core.graph import agent
@@ -95,7 +96,8 @@ def pressure(demand: int, supply: int) -> float:
 
 
 def price_cells(stats: Dict[str, Dict[str, int]], baseline: Optional[Dict[str, float]] = None,
-                default_baseline: float = 1.0, min_demand: int = MIN_DEMAND) -> List[Dict[str, Any]]:
+                default_baseline: float = 1.0, min_demand: int = MIN_DEMAND,
+                cap: float = SURGE_CAP) -> List[Dict[str, Any]]:
     """Price each cell with `quote.ratio_surge`.
 
     The curve sees demand against idle supply scaled by the cell's usual
@@ -112,7 +114,7 @@ def price_cells(stats: Dict[str, Dict[str, int]], baseline: Optional[Dict[str, f
         d, s = st["demand"], st["supply"]
         norm = max(1.0, baseline.get(cell, default_baseline))
         load = CellLoad(cell=cell, supply=(s + PRIOR) * norm * TOLERANCE, demand=d + PRIOR * norm)
-        mult = round(ratio_surge(load), 1) if d >= min_demand else 1.0
+        mult = round(ratio_surge(load, cap), 1) if d >= min_demand else 1.0
         lat, lng = h3.cell_to_latlng(cell)
         cells.append({
             "cell": cell,
@@ -194,7 +196,8 @@ class SurgeMap:
                 self.as_of = now
                 return self.view()
             stats = bin_snapshot(snap)
-            cells = price_cells(stats, self._baselines_for(stats), self._default_baseline())
+            cap = await get_surge_cap(None, SURGE_CAP)  # Legal & Jurisdiction rule, cached 30 s
+            cells = price_cells(stats, self._baselines_for(stats), self._default_baseline(), cap=cap)
             self._learn(stats, now)
             self.cells, self.as_of = cells, now
             self.runs += 1

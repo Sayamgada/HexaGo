@@ -11,6 +11,8 @@ const (
 	tagAgents    = "Agents"
 	tagSim       = "Simulator"
 	tagDeveloper = "Developer"
+	tagLegal     = "Legal"
+	tagOps       = "Ops"
 )
 
 const (
@@ -191,6 +193,30 @@ func paths() M {
 			ok(200, "Surge map", ref("SurgeMap")))},
 		"/v1/pricing/quote": M{"post": op(tagPricing, "getQuote", "Fare quote with surge", sPricing, proxied(),
 			body(ref("QuoteInput"), true), ok(200, "Quote", ref("Quote")), fails(422))},
+
+		// ---- legal & jurisdiction (agents-py) ----
+		"/v1/legal/ingest": M{"post": op(tagLegal, "ingestRegulation", "Extract rule changes from regulation text and apply them", sAgents, proxied(),
+			desc("The LLM extracts structured rule changes (regex fallback; explicit numbers in the text win), values are bounds-checked, and the old -> new diff is applied at once with an audit row and an agent event. Pricing reads the surge cap within 30 s. 503 when LEGAL_ENABLED=false."),
+			body(ref("LegalIngest"), true), ok(200, "Diff, applied", ref("LegalIngestResult")), fails(422, 503))},
+		"/v1/legal/jurisdictions": M{"get": op(tagLegal, "listJurisdictions", "Every city's rules (Bengaluru, Mumbai, Delhi)", sAgents, proxied(),
+			ok(200, "Jurisdictions", ref("Jurisdictions")))},
+		"/v1/legal/jurisdictions/{city}": M{"get": op(tagLegal, "getJurisdiction", "One city's rules", sAgents, proxied(),
+			path("city", "City key or alias (bengaluru, bangalore, mumbai, bombay, delhi)"), ok(200, "Jurisdiction", ref("Jurisdiction")), fails(404))},
+		"/v1/legal/audit": M{"get": op(tagLegal, "listLegalAudit", "Rule-change audit log, newest first", sAgents, proxied(),
+			query("limit", "integer", "1..500, default 50"), query("city", "string", "Only this city"),
+			ok(200, "Audit entries", obj([]string{"entries", "count"}, M{"entries": arr(anyObj("Audit entry: city, text, diff, rejected, source, model")), "count": integer("")})))},
+
+		// ---- ops supervisor report (agents-py) ----
+		"/v1/ops/report": M{"get": op(tagOps, "getOpsReport", "Latest Autonomous Ops Report (generated on demand when none exists)", sAgents, proxied(),
+			desc("503 when OPS_REPORT_ENABLED=false."), ok(200, "Report", ref("OpsReport")), fails(503))},
+		"/v1/ops/reports": M{"get": op(tagOps, "listOpsReports", "Report history, newest first", sAgents, proxied(),
+			query("limit", "integer", "1..100, default 20"),
+			ok(200, "Reports", obj([]string{"reports", "count"}, M{"reports": arr(ref("OpsReportRow")), "count": integer("")})), fails(503))},
+		"/v1/ops/reports/{report_id}": M{"get": op(tagOps, "getOpsReportById", "One report", sAgents, proxied(),
+			path("report_id", "Report id (opr_...)"), ok(200, "Report", ref("OpsReport")), fails(404, 503))},
+		"/v1/ops/report/run": M{"post": op(tagOps, "runOpsReport", "Generate a report now", sAgents, proxied(),
+			desc("Deterministic report; the LLM executive summary replaces the template asynchronously."),
+			ok(200, "Report", ref("OpsReport")), fails(503))},
 
 		// ---- developer platform ----
 		"/v1/developer/scopes": M{"get": op(tagDeveloper, "listScopes", "Scopes, webhook events and the signature scheme", "",

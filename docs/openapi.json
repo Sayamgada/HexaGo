@@ -936,6 +936,86 @@
         ],
         "type": "object"
       },
+      "Jurisdiction": {
+        "properties": {
+          "authority": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "city": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/LegalRules"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "city",
+          "name",
+          "rules",
+          "version"
+        ],
+        "type": "object"
+      },
+      "Jurisdictions": {
+        "properties": {
+          "backend": {
+            "description": "postgres | memory",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "LEGAL_ENABLED",
+            "type": "boolean"
+          },
+          "jurisdictions": {
+            "items": {
+              "$ref": "#/components/schemas/Jurisdiction"
+            },
+            "type": "array"
+          },
+          "pricing_city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sample_notice": {
+            "description": "Sample regulation for the Ops console",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "jurisdictions"
+        ],
+        "type": "object"
+      },
       "Key": {
         "properties": {
           "created_at": {
@@ -1071,6 +1151,133 @@
         ],
         "type": "object"
       },
+      "LegalIngest": {
+        "properties": {
+          "city": {
+            "description": "bengaluru | mumbai | delhi (or an alias); inferred from the text when omitted",
+            "type": "string"
+          },
+          "text": {
+            "description": "Regulation text, 1..20000 chars",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "LegalIngestResult": {
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "audit_id": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/RuleDiff"
+            },
+            "type": "array"
+          },
+          "event_id": {},
+          "fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jurisdiction": {
+            "$ref": "#/components/schemas/Jurisdiction"
+          },
+          "model": {
+            "type": "string"
+          },
+          "overridden": {
+            "items": {
+              "description": "Fields where the text overrode the LLM",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rejected": {
+            "items": {
+              "description": "{field, value, reason}",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "llm",
+              "rules"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "used_fallback": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "city",
+          "jurisdiction",
+          "diff",
+          "applied",
+          "audit_id",
+          "source"
+        ],
+        "type": "object"
+      },
+      "LegalRules": {
+        "properties": {
+          "av_allowed_zones": {
+            "items": {
+              "description": "H3 cell",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "city_levy_pct": {
+            "description": "Percent of the fare",
+            "type": "number"
+          },
+          "max_driving_hours": {
+            "description": "Per driver per 24 h",
+            "type": "integer"
+          },
+          "max_surge_multiplier": {
+            "description": "Surge cap, x base fare",
+            "type": "number"
+          },
+          "min_insurance_coverage": {
+            "description": "INR",
+            "type": "integer"
+          },
+          "required_documents": {
+            "items": {
+              "description": "Document key",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "max_surge_multiplier",
+          "min_insurance_coverage",
+          "max_driving_hours",
+          "av_allowed_zones",
+          "required_documents",
+          "city_levy_pct"
+        ],
+        "type": "object"
+      },
       "Match": {
         "properties": {
           "alternatives": {
@@ -1120,6 +1327,124 @@
         },
         "required": [
           "driver"
+        ],
+        "type": "object"
+      },
+      "OpsReport": {
+        "properties": {
+          "actions": {
+            "items": {
+              "description": "{kind, subject, action, result}",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "agents": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "anomalies": {
+            "items": {
+              "description": "{kind, subject, severity, detail}",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "description": "RFC 3339",
+            "type": "string"
+          },
+          "human_interventions": {
+            "description": "Always 0",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "incidents": {
+            "type": "object"
+          },
+          "kpis": {
+            "description": "Headline KPIs",
+            "type": "object"
+          },
+          "markdown": {
+            "description": "The rendered report",
+            "type": "string"
+          },
+          "money": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "summary_source": {
+            "enum": [
+              "template",
+              "llm"
+            ],
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "schedule",
+              "manual",
+              "on_demand"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "generated_at",
+          "trigger",
+          "kpis",
+          "anomalies",
+          "actions",
+          "human_interventions",
+          "summary",
+          "markdown"
+        ],
+        "type": "object"
+      },
+      "OpsReportRow": {
+        "properties": {
+          "anomalies": {
+            "type": "integer"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "headline": {
+            "type": "string"
+          },
+          "human_interventions": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "summary_source": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "generated_at"
         ],
         "type": "object"
       },
@@ -1572,6 +1897,20 @@
         },
         "required": [
           "ride"
+        ],
+        "type": "object"
+      },
+      "RuleDiff": {
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "new": {},
+          "old": {}
+        },
+        "required": [
+          "field",
+          "new"
         ],
         "type": "object"
       },
@@ -4085,6 +4424,225 @@
         "x-required-scope": "ledger:read"
       }
     },
+    "/v1/legal/audit": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listLegalAudit",
+        "parameters": [
+          {
+            "description": "1..500, default 50",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this city",
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "items": {
+                        "description": "Audit entry: city, text, diff, rejected, source, model",
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "entries",
+                    "count"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Audit entries"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Rule-change audit log, newest first",
+        "tags": [
+          "Legal"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/legal/ingest": {
+      "post": {
+        "description": "The LLM extracts structured rule changes (regex fallback; explicit numbers in the text win), values are bounds-checked, and the old -\u003e new diff is applied at once with an audit row and an agent event. Pricing reads the surge cap within 30 s. 503 when LEGAL_ENABLED=false.\n\nScope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "ingestRegulation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalIngest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalIngestResult"
+                }
+              }
+            },
+            "description": "Diff, applied"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Extract rule changes from regulation text and apply them",
+        "tags": [
+          "Legal"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/legal/jurisdictions": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listJurisdictions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Jurisdictions"
+                }
+              }
+            },
+            "description": "Jurisdictions"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Every city's rules (Bengaluru, Mumbai, Delhi)",
+        "tags": [
+          "Legal"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/legal/jurisdictions/{city}": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getJurisdiction",
+        "parameters": [
+          {
+            "description": "City key or alias (bengaluru, bangalore, mumbai, bombay, delhi)",
+            "in": "path",
+            "name": "city",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Jurisdiction"
+                }
+              }
+            },
+            "description": "Jurisdiction"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "One city's rules",
+        "tags": [
+          "Legal"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
     "/v1/metrics/counters": {
       "get": {
         "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
@@ -4157,6 +4715,225 @@
           "Rides"
         ],
         "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/ops/report": {
+      "get": {
+        "description": "503 when OPS_REPORT_ENABLED=false.\n\nScope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getOpsReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsReport"
+                }
+              }
+            },
+            "description": "Report"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Latest Autonomous Ops Report (generated on demand when none exists)",
+        "tags": [
+          "Ops"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/ops/report/run": {
+      "post": {
+        "description": "Deterministic report; the LLM executive summary replaces the template asynchronously.\n\nScope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "runOpsReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsReport"
+                }
+              }
+            },
+            "description": "Report"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Generate a report now",
+        "tags": [
+          "Ops"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/ops/reports": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "listOpsReports",
+        "parameters": [
+          {
+            "description": "1..100, default 20",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "reports": {
+                      "items": {
+                        "$ref": "#/components/schemas/OpsReportRow"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "reports",
+                    "count"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Reports"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "Report history, newest first",
+        "tags": [
+          "Ops"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
+    "/v1/ops/reports/{report_id}": {
+      "get": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "getOpsReportById",
+        "parameters": [
+          {
+            "description": "Report id (opr_...)",
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsReport"
+                }
+              }
+            },
+            "description": "Report"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable (feature off or backend down)"
+          }
+        },
+        "summary": "One report",
+        "tags": [
+          "Ops"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
       }
     },
     "/v1/ping": {
@@ -6187,6 +6964,14 @@
     {
       "description": "The 11-agent swarm: roster, audit events, LLM budget, settlement",
       "name": "Agents"
+    },
+    {
+      "description": "Legal \u0026 Jurisdiction agent: city rules, regulation ingest, audit",
+      "name": "Legal"
+    },
+    {
+      "description": "Ops Supervisor: Autonomous Ops Report",
+      "name": "Ops"
     },
     {
       "description": "Fleet simulator (DEMO_MODE)",

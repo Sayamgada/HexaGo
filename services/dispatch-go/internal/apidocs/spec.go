@@ -61,6 +61,8 @@ func Spec() M {
 			{"name": tagSafety, "description": "Safety Sentinel: signals, incidents, check-ins, suspensions"},
 			{"name": tagLedger, "description": "Double-entry clearing ledger, wallets and payouts"},
 			{"name": tagAgents, "description": "The 11-agent swarm: roster, audit events, LLM budget, settlement"},
+			{"name": tagLegal, "description": "Legal & Jurisdiction agent: city rules, regulation ingest, audit"},
+			{"name": tagOps, "description": "Ops Supervisor: Autonomous Ops Report"},
 			{"name": tagSim, "description": "Fleet simulator (DEMO_MODE)"},
 			{"name": tagDeveloper, "description": "API keys and webhooks"},
 			{"name": tagSystem, "description": "Probes, metrics and documentation"},

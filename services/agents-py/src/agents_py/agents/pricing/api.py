@@ -15,7 +15,8 @@ from pydantic import BaseModel, Field
 from src.agents_py.agents.booking.gateway import DispatchGateway
 from src.agents_py.agents.booking.itinerary import estimate
 from src.agents_py.agents.pricing import surge_map
-from src.agents_py.agents.pricing.quote import RATES, SURGE_CAP, CellLoad, quote
+from src.agents_py.agents.legal.legal_agent import get_surge_cap
+from src.agents_py.agents.pricing.quote import RATES, SURGE_CAP, CellLoad, RatioSurge, quote
 from src.agents_py.config import settings
 
 router = APIRouter()
@@ -42,7 +43,7 @@ def gateway() -> DispatchGateway:
 
 @router.get("/v1/pricing/tiers")
 async def tiers():
-    return {"currency": "INR", "surge_cap": SURGE_CAP,
+    return {"currency": "INR", "surge_cap": await get_surge_cap(None, SURGE_CAP),
             "tiers": {t: {"label": r.label, "base": r.base, "per_km": r.per_km, "per_min": r.per_min,
                           "minimum": r.minimum} for t, r in RATES.items()}}
 
@@ -64,7 +65,7 @@ async def price_quote(body: QuoteIn):
     else:
         load = CellLoad()
     try:
-        q = quote(body.tier, distance, duration, load)
+        q = quote(body.tier, distance, duration, load, surge=RatioSurge(await get_surge_cap(None, SURGE_CAP)))
     except ValueError as err:
         raise HTTPException(422, str(err)) from None
     return {**q, "eta_source": source}

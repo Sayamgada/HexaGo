@@ -15,7 +15,8 @@ GH_TOKEN when set.
 The checks write to the live system: they request one ride, run the
 safety_incident scenario (which cancels one simulated ride and suspends its
 driver until an Ops Supervisor unsuspends them) and create one API key, which
-they revoke at the end.
+they revoke at the end. The legal check ingests a 1.5x surge-cap notice and,
+unless --keep-legal, restores the previous cap afterwards.
 """
 
 from __future__ import annotations
@@ -42,6 +43,9 @@ GOLDEN_SENTENCE = ("Pick up my kid from school at 3:15 PM, drop them at soccer p
 RELEASE_ASSETS = ("HexaGo-windows-x64.zip", "HexaGo-android.apk")
 PICKUP = {"lat": 12.9716, "lng": 77.5946}   # MG Road
 DROPOFF = {"lat": 12.9352, "lng": 77.6245}  # Koramangala
+SAMPLE_NOTICE = ("Karnataka Transport Dept notice: surge pricing for app-based cabs is capped at 1.5x the base fare "
+                 "with immediate effect.")
+SAMPLE_CAP = 1.5
 
 
 class CheckFailed(Exception):
@@ -115,6 +119,7 @@ class Ctx:
     repo: str = REPO
     cold_start_s: float = 120
     safety_reply: str = "fine"  # "fine": answer the check-in; "escalate": let it time out
+    restore_legal: bool = True  # restore the surge cap the legal check changed
     http: Callable[..., Response] = urllib_http
     ws: Callable[[str, list[str], float], dict] = websockets_first_driver_frame
     sleep: Callable[[float], None] = time.sleep
@@ -251,6 +256,46 @@ def check_surge_map(ctx: Ctx) -> str:
     return f"{len(cells)} cells, {m.get('surging')} surging, max {m.get('max_multiplier')}x"
 
 
+def check_legal_surge_cap(ctx: Ctx, timeout: float = 75) -> str:
+    """Ingest the sample 1.5x notice, then wait for a surge-map recompute that respects the cap."""
+    j = ok_json(ctx.get("/v1/legal/jurisdictions"))
+    expect(j.get("enabled"), "LEGAL_ENABLED is off")
+    city = j.get("pricing_city") or "bengaluru"
+    cur = next((x for x in j.get("jurisdictions") or [] if x.get("city") == city), None)
+    expect(cur, f"no jurisdiction {city}")
+    old = cur["rules"]["max_surge_multiplier"]
+    before = ok_json(ctx.get("/v1/pricing/surge-map")).get("as_of")
+    out = ok_json(ctx.post("/v1/legal/ingest", {"city": city, "text": SAMPLE_NOTICE}))
+    restore = ctx.restore_legal and old != SAMPLE_CAP
+    try:
+        cap = out["jurisdiction"]["rules"]["max_surge_multiplier"]
+        expect(cap == SAMPLE_CAP, f"cap after ingest {cap}, want {SAMPLE_CAP} (diff {out.get('diff')})")
+
+        def capped() -> dict | None:
+            m = ok_json(ctx.get("/v1/pricing/surge-map"))
+            return m if m.get("as_of") != before and m.get("max_multiplier", 99) <= cap else None
+
+        m = ctx.poll(capped, timeout, every=5)
+        expect(m, f"surge-map max still above {cap}x (or not recomputed) after {timeout:.0f} s")
+    finally:
+        if restore:
+            ctx.post("/v1/legal/ingest", {"city": city,
+                                          "text": f"Smoke test restore: the surge cap of {old}x applies again."})
+    tail = f", restored {old}x" if restore else (", kept" if old != SAMPLE_CAP else "")
+    return (f"{out.get('source')} ({out.get('model')}): cap {old}x -> {cap}x, surge-map max {m['max_multiplier']}x "
+            f"after recompute{tail}")
+
+
+def check_ops_report(ctx: Ctx) -> str:
+    rep = ok_json(ctx.post("/v1/ops/report/run"))
+    expect("## Human interventions: 0" in rep.get("markdown", ""), "report has no 'Human interventions: 0' section")
+    latest = ok_json(ctx.get("/v1/ops/report"))
+    expect(latest.get("id") == rep.get("id") or str(latest.get("generated_at")) >= str(rep.get("generated_at")),
+           f"latest report {latest.get('id')} is older than {rep.get('id')}")
+    return (f"{rep['id']}: {len(rep.get('anomalies') or [])} anomalies, {len(rep.get('actions') or [])} "
+            f"auto-actions, {rep.get('human_interventions', 0)} human interventions")
+
+
 def check_safety(ctx: Ctx) -> str:
     sc = ok_json(ctx.post("/v1/sim/scenario/safety_incident"))
     ride_id = sc.get("ride_id")
@@ -329,6 +374,8 @@ CHECKS: list[tuple[str, Callable[[Ctx], str]]] = [
     ("booking: golden, force_fallback", check_booking_fallback),
     ("pricing quote", check_pricing_quote),
     ("surge map", check_surge_map),
+    ("legal: 1.5x cap ingested -> surge map capped", check_legal_surge_cap),
+    ("ops report generates", check_ops_report),
     ("safety incident", check_safety),
     ("ledger trial balance == 0", check_trial_balance),
     ("API key + scoped call", check_api_key),
@@ -383,6 +430,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--cold-start", type=float, default=120, help="seconds to wait for each service to wake")
     p.add_argument("--safety", choices=("fine", "escalate"), default="fine",
                    help="answer the safety check-in with \"I'm fine\" or let it escalate")
+    p.add_argument("--keep-legal", action="store_true", help="keep the 1.5x surge cap the legal check applies")
     p.add_argument("--only", help="comma-separated substrings: run only matching checks")
     p.add_argument("--json", help="also write the results to this file")
     return p.parse_args(argv)
@@ -391,7 +439,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None, **overrides: Any) -> int:
     a = parse_args(argv)
     ctx = Ctx(gateway=a.gateway.rstrip("/"), agents=a.agents.rstrip("/"), web=a.web.rstrip("/"), repo=a.repo,
-              cold_start_s=a.cold_start, safety_reply=a.safety,
+              cold_start_s=a.cold_start, safety_reply=a.safety, restore_legal=not a.keep_legal,
               github_token=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", ""), **overrides)
     checks = CHECKS
     if a.only:

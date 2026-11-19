@@ -13,6 +13,9 @@ import litellm
 
 from src.agents_py.agents import ops_supervisor
 from src.agents_py.agents.booking.api import router as booking_router
+from src.agents_py.agents.legal.api import router as legal_router
+from src.agents_py.agents.supervisor import ops_report
+from src.agents_py.agents.supervisor.api import router as ops_report_router
 from src.agents_py.agents.pricing import surge_map
 from src.agents_py.agents.pricing.api import router as pricing_router
 from src.agents_py.agents.safety.api import router as safety_router
@@ -48,6 +51,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(settlement_agent.scan_loop(settings.SETTLEMENT_SCAN_INTERVAL_S)))
     if settings.SURGE_MAP_INTERVAL_S > 0:
         tasks.append(asyncio.create_task(surge_map.surge_loop(settings.SURGE_MAP_INTERVAL_S)))
+    if settings.OPS_REPORT_ENABLED and settings.OPS_REPORT_INTERVAL_S > 0:
+        tasks.append(asyncio.create_task(ops_report.report_loop(settings.OPS_REPORT_INTERVAL_S)))
     try:
         yield
     finally:
@@ -79,6 +84,8 @@ app.include_router(safety_router)
 app.include_router(settlement_router)
 app.include_router(booking_router)
 app.include_router(pricing_router)
+app.include_router(legal_router)
+app.include_router(ops_report_router)
 
 
 class IntentRequest(BaseModel):

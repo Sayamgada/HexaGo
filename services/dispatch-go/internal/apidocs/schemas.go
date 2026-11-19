@@ -228,6 +228,43 @@ func schemas() M {
 			"cell": anyObj(""), "total": num("INR, rounded"), "eta_source": str(""),
 		}),
 
+		// ---- legal & jurisdiction ----
+		"LegalIngest": obj([]string{"text"}, M{"city": str("bengaluru | mumbai | delhi (or an alias); inferred from the text when omitted"),
+			"text": str("Regulation text, 1..20000 chars")}),
+		"LegalRules": obj([]string{"max_surge_multiplier", "min_insurance_coverage", "max_driving_hours", "av_allowed_zones", "required_documents", "city_levy_pct"}, M{
+			"max_surge_multiplier": num("Surge cap, x base fare"), "min_insurance_coverage": integer("INR"),
+			"max_driving_hours": integer("Per driver per 24 h"), "av_allowed_zones": arr(str("H3 cell")),
+			"required_documents": arr(str("Document key")), "city_levy_pct": num("Percent of the fare"),
+		}),
+		"Jurisdiction": obj([]string{"city", "name", "rules", "version"}, M{
+			"city": str(""), "name": str(""), "state": orNull(str("")), "authority": orNull(str("")), "rules": ref("LegalRules"),
+			"version": integer(""), "updated_at": orNull(str("")), "updated_by": orNull(str("")),
+		}),
+		"Jurisdictions": obj([]string{"enabled", "jurisdictions"}, M{
+			"enabled": boolean("LEGAL_ENABLED"), "jurisdictions": arr(ref("Jurisdiction")), "backend": str("postgres | memory"),
+			"pricing_city": orNull(str("")), "sample_notice": str("Sample regulation for the Ops console"),
+		}),
+		"RuleDiff": obj([]string{"field", "new"}, M{"field": str(""), "old": M{}, "new": M{}}),
+		"LegalIngestResult": obj([]string{"city", "jurisdiction", "diff", "applied", "audit_id", "source"}, M{
+			"city": str(""), "jurisdiction": ref("Jurisdiction"), "diff": arr(ref("RuleDiff")),
+			"rejected": arr(anyObj("{field, value, reason}")), "overridden": arr(str("Fields where the text overrode the LLM")),
+			"applied": boolean(""), "audit_id": str(""), "source": enum("", "llm", "rules"), "model": str(""),
+			"used_fallback": boolean(""), "fallback_reason": orNull(str("")), "summary": str(""), "event_id": M{},
+		}),
+
+		// ---- ops report ----
+		"OpsReport": obj([]string{"id", "generated_at", "trigger", "kpis", "anomalies", "actions", "human_interventions", "summary", "markdown"}, M{
+			"id": str(""), "generated_at": str("RFC 3339"), "trigger": enum("", "schedule", "manual", "on_demand"),
+			"kpis": anyObj("Headline KPIs"), "agents": arr(anyObj("")), "incidents": anyObj(""), "money": orNull(anyObj("")),
+			"anomalies": arr(anyObj("{kind, subject, severity, detail}")), "actions": arr(anyObj("{kind, subject, action, result}")),
+			"human_interventions": integer("Always 0"), "summary": str(""), "summary_source": enum("", "template", "llm"),
+			"sources": mapOf(str("")), "markdown": str("The rendered report"),
+		}),
+		"OpsReportRow": obj([]string{"id", "generated_at"}, M{
+			"id": str(""), "generated_at": str(""), "trigger": str(""), "anomalies": integer(""), "summary_source": str(""),
+			"human_interventions": integer(""), "headline": str(""),
+		}),
+
 		// ---- developer platform ----
 		"Scope":        enum("", "rides:read", "rides:write", "pricing:read", "stream:read", "agents:invoke", "ledger:read"),
 		"WebhookEvent": enum("", "ride.completed", "incident.opened", "payout.sent"),

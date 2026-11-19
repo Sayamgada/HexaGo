@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../theme/hexago_theme.dart';
 import '../../util/errors.dart';
 import '../../widgets/waking_gate.dart';
+import '../legal/legal_panel.dart';
 import '../money/money_widgets.dart';
+import '../report/report_panel.dart';
 import '../safety/widgets/incident_panel.dart';
 import 'models/ops_models.dart';
 import 'state/ops_providers.dart';
@@ -72,6 +74,10 @@ class OpsCommandCenterScreen extends ConsumerWidget {
               const SizedBox(height: 520, child: IncidentPanel()),
               const SizedBox(height: 10),
               const SizedBox(height: 620, child: AgentsGrid()),
+              const SizedBox(height: 10),
+              const SizedBox(height: 720, child: LegalPanel()),
+              const SizedBox(height: 10),
+              const SizedBox(height: 720, child: ReportPanel()),
             ],
           );
         }),
@@ -113,29 +119,32 @@ class _Feed extends ConsumerWidget {
   }
 }
 
-/// Wide layout's right column: the agent feed, the safety incident panel and
-/// the agent roster.
+/// Wide layout's right column: the agent feed, the safety incident panel,
+/// the agent roster, Legal & Jurisdiction rules and the Autonomous Ops Report.
 class _SidePanel extends StatelessWidget {
   const _SidePanel();
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 5,
       child: Column(children: [
         const TabBar(
           key: ValueKey('ops-side-tabs'),
+          labelPadding: EdgeInsets.symmetric(horizontal: 4),
           tabs: [
             Tab(key: ValueKey('tab-feed'), height: 36, text: 'Agent feed'),
             Tab(key: ValueKey('tab-safety'), height: 36, text: 'Safety'),
             Tab(key: ValueKey('tab-agents'), height: 36, text: 'Agents'),
+            Tab(key: ValueKey('tab-legal'), height: 36, text: 'Legal'),
+            Tab(key: ValueKey('tab-report'), height: 36, text: 'Report'),
           ],
         ),
         const SizedBox(height: 8),
         const Expanded(
           child: TabBarView(
             physics: NeverScrollableScrollPhysics(),
-            children: [_Feed(), IncidentPanel(), AgentsGrid()],
+            children: [_Feed(), IncidentPanel(), AgentsGrid(), LegalPanel(), ReportPanel()],
           ),
         ),
       ]),

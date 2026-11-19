@@ -33,6 +33,10 @@ func TestSchedulerRoutesAndPricingProxy(t *testing.T) {
 		{"GET", "/v1/supply?lat=12.97&lng=77.59", "", http.StatusOK, false},
 		{"POST", "/v1/pricing/quote", `{"tier":"mini"}`, http.StatusOK, true},
 		{"POST", "/v1/agents/booking/parse", `{"text":"hi"}`, http.StatusOK, true},
+		{"POST", "/v1/legal/ingest", `{"text":"surge cap of 1.5x"}`, http.StatusOK, true},
+		{"GET", "/v1/legal/jurisdictions", "", http.StatusOK, true},
+		{"GET", "/v1/ops/report", "", http.StatusOK, true},
+		{"POST", "/v1/ops/report/run", "", http.StatusOK, true},
 	} {
 		before := len(proxied)
 		rec := httptest.NewRecorder()

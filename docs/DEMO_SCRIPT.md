@@ -8,7 +8,7 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
    ```bash
    services/agents-py/.venv/Scripts/python.exe tools/smoke.py
    ```
-   Expect `15/15 passed`. It creates one ride, one safety incident (answered "I'm fine") and one API key, which it revokes.
+   Expect `17/17 passed`. It creates one ride, one safety incident (answered "I'm fine") and one API key, which it revokes.
 2. Open these tabs:
    - Web app: https://hexago-web.onrender.com
    - Swagger UI: https://dispatch-go.onrender.com/docs

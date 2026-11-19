@@ -47,7 +47,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-rfp-to-implementation) for wha
 services\agents-py\.venv\Scripts\python.exe tools\smoke.py
 ```
 
-The script runs 15 checks against the live URLs, prints a pass/fail table with timings, and exits with 1 if any check fails. The checks: health of all three services (waiting up to 2 minutes for cold starts), dispatch p99, a ride created and matched, a driver update on `/v1/stream` within 5 s, the golden-sentence booking with and without `force_fallback`, a pricing quote, the surge map, a safety incident (answered "I'm fine"), a ledger trial balance of 0, an API key and a scoped call, `/docs` and `/openapi.json`, and the release assets.
+The script runs 17 checks against the live URLs, prints a pass/fail table with timings, and exits with 1 if any check fails. The checks: health of all three services (waiting up to 2 minutes for cold starts), dispatch p99, a ride created and matched, a driver update on `/v1/stream` within 5 s, the golden-sentence booking with and without `force_fallback`, a pricing quote, the surge map, a 1.5x surge-cap regulation ingested by the Legal agent with the surge map capped at 1.5x after the next recompute (the previous cap is restored unless `--keep-legal`), an Autonomous Ops Report generated, a safety incident (answered "I'm fine"), a ledger trial balance of 0, an API key and a scoped call, `/docs` and `/openapi.json`, and the release assets.
 
 Flags:
 - `--gateway`, `--agents`, `--web` (or `HEXAGO_GATEWAY_URL`, `HEXAGO_AGENTS_URL`, `HEXAGO_WEB_URL`) point it at another deployment.

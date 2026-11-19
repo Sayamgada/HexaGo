@@ -77,6 +77,17 @@ func TestEveryRouteIsDocumented(t *testing.T) {
 			}
 		}
 	}
+	// Legal & Jurisdiction and the Ops report are proxied to agents-py too (routes_scheduler.go).
+	for p, item := range paths {
+		if strings.HasPrefix(p, "/v1/legal/") || strings.HasPrefix(p, "/v1/ops/") {
+			for method, o := range item.(apidocs.M) {
+				if o.(apidocs.M)["x-served-by"] != "agents-py" {
+					t.Errorf("%s %s should be served by agents-py", method, p)
+				}
+			}
+			delete(paths, p)
+		}
+	}
 	for p, item := range paths {
 		for method, o := range item.(apidocs.M) {
 			if o.(apidocs.M)["x-served-by"] == "agents-py" {

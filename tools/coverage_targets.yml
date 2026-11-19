@@ -40,3 +40,7 @@ python:
     - src/agents_py/agents/pricing/quote.py
     # Surge Equilibrium surge map.
     - src/agents_py/agents/pricing/surge_map.py
+    # Legal & Jurisdiction: rule extractor + diff (legal_rules.py), store, agent, API.
+    - src/agents_py/agents/legal
+    # Ops Supervisor Autonomous Ops Report: report builder (report.py), runner, API.
+    - src/agents_py/agents/supervisor
