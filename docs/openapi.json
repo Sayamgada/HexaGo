@@ -2875,6 +2875,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "1..100: keep at most this many events per agent (last 24 h); ignored with agent",
+            "in": "query",
+            "name": "per_agent",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {

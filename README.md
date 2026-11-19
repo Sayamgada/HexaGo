@@ -1,34 +1,59 @@
 # HexaGo
 
-**HexaGo** is an AI-native Mobility-as-a-Service (MaaS) ride-hailing platform engineered for **zero-human operations**. All platform capabilities—from natural language booking parsing, H3 spatial dispatch matching, dynamic pooling, and surge equilibrium to safety anomaly detection and automated settlement—are orchestrated by autonomous AI multi-agent swarms.
+**HexaGo is an AI-native ride-hailing platform that runs a city with zero humans in the loop.** In live Bengaluru, a simulated fleet of 300 vehicles is matched to riders in microseconds by an H3 dispatch broker. Six autonomous agents book multi-leg trips from a single sentence, price each hexagon by supply and demand, call riders when a trip looks wrong, escalate emergencies, freeze drivers, and settle every fare on a double-entry ledger that balances to ₹0.00. All of it is logged to an append-only audit trail, and each agent has a deterministic fallback for when the LLM is slow or over budget. Every line of code, every test and every doc was written by AI agents, under a test-first check, a 96% coverage gate, and a CI self-healing loop.
 
-100% of the architecture, services, application code, blueprints, and tests are AI-authored.
+## Live links
 
-## Live Deployment
-
-All services run on Render (Free plan, created manually; see [Manual Render setup](#manual-render-setup)):
-
-| Service | URL |
+| | |
 |---|---|
-| Web app (Flutter Web) | https://hexago-web.onrender.com |
-| Gateway (`dispatch-go`) | https://dispatch-go.onrender.com |
-| Agents (`agents-py`) | https://hexago-65oz.onrender.com |
+| **Web app** | https://hexago-web.onrender.com |
+| **API reference (Swagger UI)** | https://dispatch-go.onrender.com/docs · OpenAPI 3.1: [`/openapi.json`](https://dispatch-go.onrender.com/openapi.json) · quickstart: [docs/API.md](docs/API.md) |
+| **Downloads** | [Windows x64 (zip)](https://github.com/Sayamgada/HexaGo/releases/latest/download/HexaGo-windows-x64.zip) · [Android (APK)](https://github.com/Sayamgada/HexaGo/releases/latest/download/HexaGo-android.apk) · [all releases](https://github.com/Sayamgada/HexaGo/releases/latest) |
+| Gateway (`dispatch-go`) | https://dispatch-go.onrender.com ([`/healthz`](https://dispatch-go.onrender.com/healthz)) |
+| Agents (`agents-py`) | https://hexago-65oz.onrender.com (reached through the gateway at `/v1/agents/*`) |
 
-Quick checks: [`/healthz`](https://dispatch-go.onrender.com/healthz) and [`/v1/agents/ping`](https://dispatch-go.onrender.com/v1/agents/ping) (proxied to agents-py). Free services sleep when idle, so the first request can take about a minute.
+The services run on Render's free plan and sleep when idle, so the first request can take about a minute. The Windows build is unzipped and run as `HexaGo.exe`. The Android APK is debug-signed, so you have to allow installs from unknown sources. Both builds talk to the production gateway and are built by [`release.yml`](.github/workflows/release.yml) on every `v*` tag.
 
-### Download desktop / Android app
+Docs: [Architecture and RFP map](docs/ARCHITECTURE.md) · [10-minute demo script](docs/DEMO_SCRIPT.md) · [Dispatch broker](docs/DISPATCH_BROKER.md) · [Fleet simulator](docs/FLEET_SIMULATOR.md) · [Autocoding pipeline](docs/AUTOCODING.md) · [Autocoding log](docs/AUTOCODING_LOG.md) · [Stats](docs/AUTOCODING_STATS.md)
 
-| Platform | Download |
+## Rubric to feature map
+
+| Rubric area | Feature | Where to see it | Code |
+|---|---|---|---|
+| Zero-human operations | Ops Command Center: live city, "0 humans in the loop · N autonomous decisions today", agent feed, Agents tab (ACTIVE or PLANNED) | Web app → **Ops Command Center** | `apps/hexago_app/lib/features/ops`, `services/agents-py/src/agents_py/core` |
+| Geospatial dispatch latency | Adaptive H3 k-ring matching, 64×64 sharded index, scored ranking, free upgrades; live p50 about 120 µs, p99 under 1 ms | Ops metric strip, `GET /v1/metrics/dispatch` | `services/dispatch-go/internal/{geo,fleet,matching,dispatch}` |
+| 100% AI-generated code | Test-first check, 96% coverage gate, LLM self-heal ([Sayamgada/HexaGo#1](https://github.com/Sayamgada/HexaGo/pull/1) → [Sayamgada/HexaGo#16](https://github.com/Sayamgada/HexaGo/pull/16) auto-merged), autocoding log and stats | [docs/AUTOCODING.md](docs/AUTOCODING.md), Actions | `tools/`, `.github/workflows/` |
+| Autonomous safety | Detector → Safety Sentinel → voice check-in → escalation → driver frozen → timeline and path replay → payout held | Ops → **Safety incident** scenario → **Safety** tab | `services/dispatch-go/internal/safety`, `services/agents-py/src/agents_py/agents/safety` |
+| AI booking and pricing | One sentence becomes a multi-leg plan; clarifying questions; rule-based fallback; per-hexagon surge (watch it under **Rain storm**) | Web app → **Rider** | `services/agents-py/src/agents_py/agents/{booking,pricing}` |
+| Finance | Double-entry ledger in paise, fare breakdown, instant payouts, holds, refunds, trial balance "Balanced ₹0.00", Settlement auditor | Ops **Money** tile, **Fare breakdown** | `services/dispatch-go/internal/ledger`, `services/agents-py/src/agents_py/agents/settlement` |
+| Platform and API | OpenAPI 3.1, scoped API keys, rate limits, signed webhooks, Python and TypeScript SDKs; web, Windows, Android | `/docs`, **Developers** card, Releases | `services/dispatch-go/internal/{developer,apidocs}`, `sdk/` |
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-rfp-to-implementation) for what is built, what is simulated (the vehicles, emergency APIs, money movement), and the production upgrade path.
+
+## Screenshots
+
+<!-- Replace each placeholder with an image, e.g. ![Ops Command Center](docs/screenshots/ops.png) -->
+
+| | |
 |---|---|
-| Windows (x64) | [HexaGo-windows-x64.zip](https://github.com/Sayamgada/HexaGo/releases/latest/download/HexaGo-windows-x64.zip): unzip and run `HexaGo.exe` |
-| Android | [HexaGo-android.apk](https://github.com/Sayamgada/HexaGo/releases/latest/download/HexaGo-android.apk) (debug-signed; allow installs from unknown sources) |
-| All releases | https://github.com/Sayamgada/HexaGo/releases/latest |
+| _Ops Command Center: live city and "0 humans" banner (`docs/screenshots/ops.png`)_ | _Agents tab (`docs/screenshots/agents.png`)_ |
+| _Safety: escalated incident, timeline and path replay (`docs/screenshots/safety.png`)_ | _Rider: golden-sentence two-leg plan (`docs/screenshots/rider.png`)_ |
+| _Surge zones after Rain storm (`docs/screenshots/surge.png`)_ | _Fare breakdown and "Balanced ₹0.00" (`docs/screenshots/finance.png`)_ |
+| _Developers screen and Swagger UI (`docs/screenshots/api.png`)_ | _Windows desktop and Android apps (`docs/screenshots/apps.png`)_ |
 
-Both builds talk to the production gateway (URLs baked in with `--dart-define`). They are built by [`release.yml`](.github/workflows/release.yml) on every `v*` tag.
+## Smoke test (live end-to-end)
 
-### Public API
+```powershell
+services\agents-py\.venv\Scripts\python.exe tools\smoke.py
+```
 
-Swagger UI: **https://dispatch-go.onrender.com/docs** · OpenAPI 3.1: [`/openapi.json`](https://dispatch-go.onrender.com/openapi.json) · quickstart: [`docs/API.md`](docs/API.md) · SDKs: [`sdk/python`](sdk/python/hexago.py), [`sdk/typescript`](sdk/typescript/hexago.ts). Get a key with `POST /v1/developer/keys` (or the **Developers** card in the app).
+The script runs 15 checks against the live URLs, prints a pass/fail table with timings, and exits with 1 if any check fails. The checks: health of all three services (waiting up to 2 minutes for cold starts), dispatch p99, a ride created and matched, a driver update on `/v1/stream` within 5 s, the golden-sentence booking with and without `force_fallback`, a pricing quote, the surge map, a safety incident (answered "I'm fine"), a ledger trial balance of 0, an API key and a scoped call, `/docs` and `/openapi.json`, and the release assets.
+
+Flags:
+- `--gateway`, `--agents`, `--web` (or `HEXAGO_GATEWAY_URL`, `HEXAGO_AGENTS_URL`, `HEXAGO_WEB_URL`) point it at another deployment.
+- `--safety escalate` lets the incident escalate instead of answering it.
+- `--only safety,ledger` runs a subset.
+- `--json out.json` also writes the results to a file.
 
 ---
 
@@ -36,8 +61,8 @@ Swagger UI: **https://dispatch-go.onrender.com/docs** · OpenAPI 3.1: [`/openapi
 
 ```mermaid
 flowchart TD
-    Client["Flutter Client (Web / Windows / macOS / Linux / Android)"]
-    Gateway["dispatch-go (Go 1.22+ Gateway: Chi + WebSockets + H3)"]
+    Client["Flutter Client (Web / Windows / Android)"]
+    Gateway["dispatch-go (Go Gateway: Chi + WebSockets + H3)"]
     Agents["agents-py (Python 3.12 FastAPI + LangGraph + LiteLLM)"]
     DB[("PostgreSQL 16 + pgvector")]
     Redis[("Redis 7 (Driver Locations & Pub/Sub)")]
@@ -52,6 +77,8 @@ flowchart TD
     Agents -->|Agent State Coordination| Redis
 ```
 
+More diagrams (dispatch, safety, ledger, autocoding): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ---
 
 ## Monorepo Layout
@@ -63,10 +90,12 @@ HexaGo/
 ├── services/
 │   ├── dispatch-go/         # Go gateway (Chi, Gorilla WebSocket, Uber H3, pgx, go-redis)
 │   └── agents-py/           # Python multi-agent swarm (FastAPI, LangGraph, LiteLLM, pgvector)
+├── sdk/                     # Python and TypeScript SDKs for the public API
+├── tools/                   # Assembly line: coverage gate, self-heal, stats, smoke test
 ├── infra/                   # Infrastructure guides & manifests
-├── docs/                    # Autonomous coding log and system documentation
+├── docs/                    # Architecture, demo script, API, autocoding log
 ├── loadtest/                # Load simulation and telemetry stress scripts
-├── .github/workflows/       # GitHub Actions CI workflow (Go, Python, Flutter)
+├── .github/workflows/       # CI, self-heal, release, keep-warm
 ├── render.yaml              # Render Blueprint deploying Gateway, Agents, Web, DB & Redis
 ├── docker-compose.yml       # Local multi-service orchestration
 ├── dev.ps1                  # Unified developer PowerShell automation harness
@@ -78,17 +107,21 @@ HexaGo/
 
 ## Autonomous Agent Roster
 
-1. **Booking Intent Agent**: NL parsing with deterministic non-LLM regex/rule fallback.
-2. **Dispatch Broker Agent**: Spatial H3 clustering and driver-rider matching.
-3. **Pool Batching Agent**: 90-second batch window trajectory optimization.
-4. **Surge Equilibrium Agent**: Real-time hex supply/demand elasticity pricing.
-5. **Demand Forecast Agent**: 15–60 min predictive supply positioning.
-6. **Safety Sentinel Agent**: Route anomaly, telemetry distress, and deviation alerts.
-7. **Compliance Vision Agent**: Multimodal vehicle inspection and driver license verification.
-8. **Legal & Jurisdiction Agent**: Municipal regulations and tariff enforcement.
-9. **Settlement Agent**: Algorithmic driver earnings and dispute compensations.
-10. **Support & Dispute Agent**: Conversational arbitration and refund processing.
-11. **Ops Supervisor Agent**: Swarm monitoring, drift detection, and guardrail enforcement.
+Live status: `GET https://dispatch-go.onrender.com/v1/agents`.
+
+| # | Agent | Status | Role |
+|---|---|---|---|
+| 1 | Booking Intent | Active | Turns natural language into a multi-leg plan; rule-based fallback |
+| 2 | Dispatch Broker | Active | H3 matching with scored ranking (deterministic Go) |
+| 3 | Pool Batching | Planned | 90-second batch-window pooling |
+| 4 | Surge Equilibrium | Active | Per-hexagon supply/demand pricing and surge map |
+| 5 | Demand Forecast | Planned | Demand 15 to 60 minutes ahead |
+| 6 | Safety Sentinel | Active | Check-ins, escalation, driver suspension |
+| 7 | Compliance Vision | Planned | Vehicle and document audits |
+| 8 | Legal & Jurisdiction | Planned | Per-city tariffs and rules |
+| 9 | Settlement | Active | Audits ledger entries and payouts |
+| 10 | Support & Dispute | Planned | Complaints, lost and found, refunds |
+| 11 | Ops Supervisor | Active | Heartbeat, guardrails, confirms incident resolution |
 
 ---
 
@@ -134,6 +167,12 @@ Use the included `dev.ps1` script to manage local development and execute test s
 
 # 6. Launch Flutter Web in Chrome wired to local dispatch-go gateway
 .\dev.ps1 web
+```
+
+### 4. Smoke-test a local stack
+With `dispatch-go` on :8080 and `agents-py` on :8000 (pass `--web` the URL `flutter run` prints; the release check still reads GitHub):
+```powershell
+services\agents-py\.venv\Scripts\python.exe tools\smoke.py --gateway http://localhost:8080 --agents http://localhost:8000 --web http://localhost:<flutter-port>
 ```
 
 ---

@@ -150,3 +150,18 @@ def test_validator_rejects_a_bad_body():
         check("GET", "/v1/pricing/tiers", 200, {"currency": "INR", "tiers": {"mini": {"base": "free"}}})
     with pytest.raises(Exception):
         check("GET", "/v1/agents", 200, {"agents": [{"id": "x"}], "total": 1})
+
+
+def test_spec_documents_every_agents_query_parameter():
+    """Every query parameter a public agents-py route accepts is declared in the spec."""
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        dependant = getattr(route, "dependant", None)
+        if dependant is None or not path.startswith("/v1/"):
+            continue
+        for method in getattr(route, "methods", set()) - {"HEAD", "OPTIONS"}:
+            op = SPEC["paths"][path][method.lower()]
+            declared = {p["name"] for p in op.get("parameters", []) if p.get("in") == "query"}
+            for qp in dependant.query_params:
+                name = qp.alias or qp.name
+                assert name in declared, f"{method} {path}: query parameter {name} is not in docs/openapi.json"
