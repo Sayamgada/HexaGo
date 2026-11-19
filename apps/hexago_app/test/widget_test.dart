@@ -80,12 +80,13 @@ void main() {
       expect(find.byKey(const Key('download-apps')), findsNothing); // tests run on the VM, not the web
     });
 
-    testWidgets('tapping on Driver role card updates selection', (WidgetTester tester) async {
+    testWidgets('tapping on Driver role card opens the driver picker', (WidgetTester tester) async {
       await tester.pumpWidget(_app());
       await tester.tap(find.byKey(const Key('role-card-Driver')));
-      await tester.pumpAndSettle();
-      final badgeFinder = find.byKey(const Key('selected-role-badge'));
-      expect(find.descendant(of: badgeFinder, matching: find.text('Selected Role: Driver')), findsOneWidget);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(const ValueKey('driver-search')), findsOneWidget);
+      expect(find.byKey(const ValueKey('driver-row-d_001')), findsOneWidget);
     });
 
     testWidgets('tapping the Ops Command Center card opens the command center', (WidgetTester tester) async {

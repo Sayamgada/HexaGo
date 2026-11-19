@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import 'config/app_config.dart';
 import 'features/developers/developers_screen.dart';
+import 'features/driver/driver_home_screen.dart';
+import 'features/driver/driver_picker_screen.dart';
 import 'features/ops/ops_command_center_screen.dart';
 import 'features/rider/rider_screen.dart';
 import 'features/safety/safety_call_screen.dart';
@@ -20,6 +22,11 @@ GoRouter buildRouter({String initialLocation = '/'}) => GoRouter(
         GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
         GoRoute(path: '/ops', builder: (context, state) => const OpsCommandCenterScreen()),
         GoRoute(path: '/developers', builder: (context, state) => const DevelopersScreen()),
+        GoRoute(path: '/driver', builder: (context, state) => const DriverPickerScreen()),
+        GoRoute(
+          path: '/driver/:id',
+          builder: (context, state) => DriverHomeScreen(driverId: state.pathParameters['id'] ?? ''),
+        ),
         GoRoute(
           path: '/rider',
           builder: (context, state) => RiderScreen(initialPersonaId: state.uri.queryParameters['persona']),

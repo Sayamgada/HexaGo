@@ -3495,6 +3495,113 @@
         ]
       }
     },
+    "/v1/drivers": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "listDrivers",
+        "parameters": [
+          {
+            "description": "Only this tier",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Driver id substring",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "{drivers: [...], count, simulated}",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Drivers"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Simulated drivers for the Driver module picker (status, tier, AV, suspension)",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
+    "/v1/drivers/{id}": {
+      "get": {
+        "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed).",
+        "operationId": "getDriver",
+        "parameters": [
+          {
+            "description": "Driver id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Driver detail",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Driver"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "One driver's live state, current ride (ETA, progress), AV panel and Safety suspension",
+        "tags": [
+          "Rides"
+        ],
+        "x-required-scope": "rides:read"
+      }
+    },
     "/v1/drivers/{id}/status": {
       "post": {
         "description": "Scope `rides:write` when called with an API key (keyless first-party calls are allowed).",

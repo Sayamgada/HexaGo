@@ -31,6 +31,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context.push('/rider');
       return;
     }
+    if (role == 'Driver') {
+      context.push('/driver');
+      return;
+    }
     if (role == 'Developers') {
       context.push('/developers');
       return;
