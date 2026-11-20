@@ -1,8 +1,9 @@
 name: Keep warm
 
 # Keeps the free Render services awake for the demo: every 10 minutes it GETs
-# dispatch-go /healthz, /v1/agents (proxied to agents-py, which wakes it) and
-# the web app, and logs the response times in the job summary.
+# dispatch-go /healthz, agents-py /healthz directly (a cold agents-py takes
+# longer than the gateway's 60 s proxy timeout to wake), then /v1/agents through
+# the gateway and the web app, and logs the response times in the job summary.
 # On only while the repository variable KEEP_WARM is "true":
 #   gh variable set KEEP_WARM --body true     (on)
 #   gh variable set KEEP_WARM --body false    (off; or delete it)
@@ -30,6 +31,7 @@ jobs:
         run: |
           targets=(
             "dispatch-go /healthz|https://dispatch-go.onrender.com/healthz"
+            "agents-py /healthz|https://hexago-65oz.onrender.com/healthz"
             "agents-py via /v1/agents|https://dispatch-go.onrender.com/v1/agents"
             "hexago-web|https://hexago-web.onrender.com/"
           )

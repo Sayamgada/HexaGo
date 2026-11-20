@@ -152,6 +152,7 @@ Invariants, each enforced in code and in the database:
 - Entries are append-only. Refunds are reversal entries.
 - Rider wallets and payables can never go negative: a CHECK constraint, plus a bounded retry when concurrent postings race.
 - `GET /v1/ledger/trial-balance` reports `total_paise: 0` live. The Settlement agent re-audits entries and payouts every 60 s.
+- The city levy is fixed at 2% in `ComputeSplit`. The Legal agent stores a `city_levy_pct` rule per city, but it is informational only: the ledger does not read it yet.
 
 ## 5. Autocoding pipeline
 
@@ -207,11 +208,13 @@ Legend: **Built**: running in production on Render. **Simulated**: real code pat
 | Surge Equilibrium | **Active** | Per-cell supply/demand multipliers, surge map, quotes | Fixed multiplier curve on the cell's supply/demand ratio |
 | Safety Sentinel | **Active** | Rules decide; LLM reasoning is async and upgrade-only; check-in and escalation | Pure rules (always available) |
 | Settlement | **Active** | Ledger split in Go; agent audits entries and payouts every 60 s; LLM explains flags | Deterministic checks (the LLM never decides) |
-| Ops Supervisor | **Active** | Heartbeat every 300 s, LLM budget and cache guardrails, confirms incident resolution and unsuspend | Circuit breaker to the rule engines |
+| Demand Forecast | **Active** | Every 60 s: Holt smoothing per H3 res-8 cell, time-of-day curve, same-hour history, scenario boosts; heatmap now / +15 / +30 min; LLM explains the top 5 hotspots asynchronously (cleared whenever the active scenarios change) | Template explanations; the numbers never come from the LLM |
+| Legal & Jurisdiction | **Active** | `POST /v1/legal/ingest`: the LLM extracts a rule change set, values are bounds-checked and applied with an audit row; Pricing reads the surge cap per city | Regex extractor (its explicit numbers win over the LLM) |
+| Ops Supervisor | **Active** | Heartbeat every 300 s, LLM budget and cache guardrails, confirms incident resolution and unsuspend, Autonomous Ops Report every 300 s | Circuit breaker to the rule engines |
 | Pool Batching | **Planned** | Listed in the roster as PLANNED | Detour threshold below 15% added ETA (designed, not built) |
-| Demand Forecast | **Planned** | Listed as PLANNED; the simulator's demand curve stands in | Moving average by weekday and hour |
 | Compliance Vision | **Planned** | Listed as PLANNED | Manual hold queue and heuristic OCR |
-| Legal & Jurisdiction | **Planned** | Bengaluru's 2% city levy and 5% GST are fixed rates in the split | Static jurisdiction lookup table |
 | Support & Dispute | **Planned** | Refund endpoint exists (`POST /v1/ledger/refunds`); no agent yet | Canned escalation workflow and credit matrix |
+
+Active (8): Dispatch Broker, Booking Intent, Surge Equilibrium, Demand Forecast, Safety Sentinel, Settlement, Legal & Jurisdiction, Ops Supervisor. Planned (3): Pool Batching, Compliance Vision, Support & Dispute.
 
 `GET /v1/agents` returns this roster live, with status, `decisions_last_hour`, `last_decision` and `fallback_rate`.

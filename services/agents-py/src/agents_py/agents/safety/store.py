@@ -252,6 +252,9 @@ class SafetyStore:
             incident_id) or []
         inc["timeline"] = [{"id": s["id"], "step": s["step"], "actor": s["actor"], "details": _loads(s["details"]),
                             "at": s["at"]} for s in steps]
+        # Cache it: after a restart the incident lives only in Postgres, and every later step
+        # (supervisor review, unfreeze, close) works on the in-memory copy.
+        self.incidents[incident_id] = inc
         return inc
 
     async def list_incidents(self, limit: int = 50) -> List[Dict[str, Any]]:

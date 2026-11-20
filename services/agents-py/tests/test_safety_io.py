@@ -102,6 +102,33 @@ async def test_store_reads_back_from_postgres_after_restart():
     assert not any(s.startswith("CREATE TABLE") for s in fresh.pool.sql())  # schema already there
 
 
+async def test_incident_loaded_from_postgres_can_be_resolved_after_restart():
+    """After a restart the incident exists only in Postgres; resolve (and resolve-stale) must still work."""
+    clock = Clock()
+    mem = SafetyStore(clock=clock)
+    inc = await mem.create_incident(ride_id="r1", driver_id="d1", severity=0.9, status="escalated",
+                                    decision="escalate", actions={"driver_frozen": {"status": "ok"}})
+    row = _row(inc)
+
+    def handler(sql, args):
+        if "to_regclass" in sql:
+            return "incident_timeline"
+        if sql.startswith("SELECT * FROM incidents WHERE id"):
+            return [row] if args[0] == inc["id"] else []
+        if sql.startswith("SELECT * FROM incidents ORDER BY"):
+            return [row]
+        return None
+
+    actions = FakeActions()
+    s, *_ = make_sentinel(actions, pool=FakePool(handler), clock=clock)
+    assert inc["id"] not in s.store.incidents
+    clock.advance(2 * 3600)
+    out = await s.resolve_stale(3600)
+    assert [r["incident_id"] for r in out["resolved"]] == [inc["id"]] and out["skipped"] == []
+    assert s.store.incidents[inc["id"]]["status"] == "resolved" and "unsuspend" in actions.names()
+    assert s.store.incidents[inc["id"]]["timeline"][-1]["details"]["summary"].endswith("auto-resolved: demo cleanup")
+
+
 async def test_store_misc():
     st = SafetyStore(clock=Clock())
     assert st.backend == "memory"

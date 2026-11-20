@@ -1,6 +1,6 @@
 # HexaGo
 
-**HexaGo is an AI-native ride-hailing platform that runs a city with zero humans in the loop.** In live Bengaluru, a simulated fleet of 300 vehicles is matched to riders in microseconds by an H3 dispatch broker. Six autonomous agents book multi-leg trips from a single sentence, price each hexagon by supply and demand, call riders when a trip looks wrong, escalate emergencies, freeze drivers, and settle every fare on a double-entry ledger that balances to ₹0.00. All of it is logged to an append-only audit trail, and each agent has a deterministic fallback for when the LLM is slow or over budget. Every line of code, every test and every doc was written by AI agents, under a test-first check, a 96% coverage gate, and a CI self-healing loop.
+**HexaGo is an AI-native ride-hailing platform that runs a city with zero humans in the loop.** In live Bengaluru, a simulated fleet of 300 vehicles is matched to riders in microseconds by an H3 dispatch broker. Eight autonomous agents book multi-leg trips from a single sentence, price each hexagon by supply and demand, forecast demand per hexagon for drivers, apply new city regulations, call riders when a trip looks wrong, escalate emergencies, freeze drivers, and settle every fare on a double-entry ledger that balances to ₹0.00. All of it is logged to an append-only audit trail, and each agent has a deterministic fallback for when the LLM is slow or over budget. Every line of code, every test and every doc was written by AI agents, under a test-first check, a 96% coverage gate, and a CI self-healing loop.
 
 ## Live links
 
@@ -47,7 +47,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-rfp-to-implementation) for wha
 services\agents-py\.venv\Scripts\python.exe tools\smoke.py
 ```
 
-The script runs 17 checks against the live URLs, prints a pass/fail table with timings, and exits with 1 if any check fails. The checks: health of all three services (waiting up to 2 minutes for cold starts), dispatch p99, a ride created and matched, a driver update on `/v1/stream` within 5 s, the golden-sentence booking with and without `force_fallback`, a pricing quote, the surge map, a 1.5x surge-cap regulation ingested by the Legal agent with the surge map capped at 1.5x after the next recompute (the previous cap is restored unless `--keep-legal`), an Autonomous Ops Report generated, a safety incident (answered "I'm fine"), a ledger trial balance of 0, an API key and a scoped call, `/docs` and `/openapi.json`, and the release assets.
+The script runs 20 checks against the live URLs, prints a pass/fail table with timings, and exits with 1 if any check fails. The checks: health of all three services (waiting up to 2 minutes for cold starts), dispatch p99, a ride created and matched, a driver update on `/v1/stream` within 5 s, the golden-sentence booking with and without `force_fallback`, a pricing quote, the surge map, the demand-forecast heatmap, a take-over ride offer accepted and one declined and re-matched, a 1.5x surge-cap regulation ingested by the Legal agent with the surge map capped at 1.5x after the next recompute (the previous cap is restored unless `--keep-legal`), an Autonomous Ops Report generated, a safety incident (answered "I'm fine"), a ledger trial balance of 0, an API key and a scoped call, `/docs` and `/openapi.json`, and the release assets.
 
 Flags:
 - `--gateway`, `--agents`, `--web` (or `HEXAGO_GATEWAY_URL`, `HEXAGO_AGENTS_URL`, `HEXAGO_WEB_URL`) point it at another deployment.
@@ -115,13 +115,17 @@ Live status: `GET https://dispatch-go.onrender.com/v1/agents`.
 | 2 | Dispatch Broker | Active | H3 matching with scored ranking (deterministic Go) |
 | 3 | Pool Batching | Planned | 90-second batch-window pooling |
 | 4 | Surge Equilibrium | Active | Per-hexagon supply/demand pricing and surge map |
-| 5 | Demand Forecast | Planned | Demand 15 to 60 minutes ahead |
+| 5 | Demand Forecast | Active | Per-hexagon demand now / +15 / +30 min and the driver heatmap |
 | 6 | Safety Sentinel | Active | Check-ins, escalation, driver suspension |
 | 7 | Compliance Vision | Planned | Vehicle and document audits |
-| 8 | Legal & Jurisdiction | Planned | Per-city tariffs and rules |
+| 8 | Legal & Jurisdiction | Active | Ingests regulation text into per-city rules (surge cap, levy, hours) |
 | 9 | Settlement | Active | Audits ledger entries and payouts |
 | 10 | Support & Dispute | Planned | Complaints, lost and found, refunds |
-| 11 | Ops Supervisor | Active | Heartbeat, guardrails, confirms incident resolution |
+| 11 | Ops Supervisor | Active | Heartbeat, guardrails, confirms incident resolution, Autonomous Ops Report |
+
+Active (8): Dispatch Broker, Booking Intent, Surge Equilibrium, Demand Forecast, Safety Sentinel, Settlement, Legal & Jurisdiction, Ops Supervisor. Planned (3): Pool Batching, Compliance Vision, Support & Dispute.
+
+The city levy is fixed at 2% in the ledger split. The Legal agent stores each city's `city_levy_pct` rule, but the ledger does not read it yet.
 
 ---
 

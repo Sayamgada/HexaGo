@@ -8,7 +8,11 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
    ```bash
    services/agents-py/.venv/Scripts/python.exe tools/smoke.py
    ```
-   Expect `17/17 passed`. It creates one ride, one safety incident (answered "I'm fine") and one API key, which it revokes.
+   Expect `20/20 passed`. It creates one ride, one safety incident (answered "I'm fine"), two take-over ride offers (one accepted, one declined) and one API key, which it revokes. It ingests the 1.5x Karnataka notice and restores the previous cap.
+   If the Ops report flags old escalated incidents left over from testing, clear them once (DEMO_MODE only; each goes through the Ops Supervisor-confirmed resolve path, timeline note "auto-resolved: demo cleanup", held payouts released):
+   ```bash
+   curl -X POST "https://dispatch-go.onrender.com/v1/safety/incidents/resolve-stale?older_than=60m"
+   ```
 2. Open these tabs:
    - Web app: https://hexago-web.onrender.com
    - Swagger UI: https://dispatch-go.onrender.com/docs
@@ -22,12 +26,16 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 | Time | Step | Rubric area |
 |---|---|---|
 | 0:00 to 1:00 | 1. Ops Command Center | Zero-human operations |
-| 1:00 to 3:00 | 2. Geospatial latency | Dispatch performance |
-| 3:00 to 5:00 | 3. Autocoding | 100% AI-built |
-| 5:00 to 7:00 | 4. Safety | Autonomous incident response |
-| 7:00 to 8:30 | 5. Rider | Natural-language booking, pricing |
-| 8:30 to 9:30 | 6. Finance | Real-time clearing ledger |
-| 9:30 to 10:00 | 7. Public API and downloads | Platform |
+| 1:00 to 2:30 | 2. Geospatial latency | Dispatch performance |
+| 2:30 to 4:00 | 3. Autocoding | 100% AI-built |
+| 4:00 to 5:45 | 4. Safety | Autonomous incident response |
+| 5:45 to 6:45 | 5. Driver and AI forecasting | Demand forecast, human-in-the-car offers |
+| 6:45 to 8:00 | 6. Rider | Natural-language booking, pricing |
+| 8:00 to 8:30 | 7. Legal agent | Regulation to live rules |
+| 8:30 to 9:30 | 8. Finance | Real-time clearing ledger |
+| 9:30 to 10:00 | 9. Public API and downloads | Platform |
+
+Steps 2 to 4 run slightly shorter than their old 2-minute slots. Cut the PR #1 walkthrough in step 3 first if you fall behind.
 
 ---
 
@@ -40,11 +48,11 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 4. Right panel: click the **Agents** tab. Each card shows ACTIVE or PLANNED, its decisions in the last hour, its model or "Deterministic rules", and its last decision.
 
 **Say**
-"This is a live city: Bengaluru, 300 vehicles, simulated riders. Nobody is operating it. Every dispatch, price, safety call and payout is an agent decision, logged to an append-only `agent_events` table. Six of our eleven agents are live today; the other five are marked PLANNED, and we're open about that. Every agent has a deterministic fallback, so the city keeps running if the LLM times out or hits its budget."
+"This is a live city: Bengaluru, 300 vehicles, simulated riders. Nobody is operating it. Every dispatch, price, safety call and payout is an agent decision, logged to an append-only `agent_events` table. Eight of our eleven agents are live today: Dispatch Broker, Booking Intent, Surge Equilibrium, Demand Forecast, Safety Sentinel, Settlement, Legal & Jurisdiction and Ops Supervisor. Pool Batching, Compliance Vision and Support & Dispute are marked PLANNED, and we're open about that. Every agent has a deterministic fallback, so the city keeps running if the LLM times out or hits its budget."
 
 **If it fails live:** if the screen says "Waking up the agent swarm...", keep talking; it recovers within a minute. If the map stays empty, show `GET https://dispatch-go.onrender.com/v1/metrics/dispatch` and `/v1/agents` in a browser tab: same numbers, raw.
 
-## 2. Geospatial latency (2 min)
+## 2. Geospatial latency (1.5 min)
 
 **Clicks**
 1. Stay on Ops. Point at **Match p50** and **Match p99** in the metric strip. Typical live values: p50 about 120 µs, p99 about 600 µs.
@@ -56,7 +64,7 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 
 **If it fails live:** open `https://dispatch-go.onrender.com/v1/metrics/dispatch` (`p50_ms` and `p99_ms` are milliseconds with 0.1 µs resolution) and [docs/DISPATCH_BROKER.md](DISPATCH_BROKER.md) for the algorithm. If the cold-start ramp makes p99 look high, say so: the first minute after a restart includes JIT and cache warm-up.
 
-## 3. Autocoding (2 min)
+## 3. Autocoding (1.5 min)
 
 **Clicks**
 1. GitHub: open [docs/AUTOCODING_LOG.md](AUTOCODING_LOG.md). Scroll the table: every session, its prompt, its files and tests, all by Claude Code or Antigravity.
@@ -70,7 +78,7 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 
 **If it fails live:** GitHub is slow or down: show [docs/AUTOCODING.md](AUTOCODING.md) (the pipeline diagram) and the local `git log --oneline`.
 
-## 4. Safety (2 min)
+## 4. Safety (1.75 min)
 
 **Clicks**
 1. Ops: in the scenario bar, click **Safety incident**. A snackbar reads "Safety incident injected. Agents are responding autonomously."
@@ -85,7 +93,21 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 
 **If it fails live:** if no incident appears within 30 s, click **Safety incident** again (the scenario needs a ride on trip). If the voice doesn't play, the call screen still accepts typed replies; or show the incident from `GET https://dispatch-go.onrender.com/v1/safety/incidents?limit=5`. Optional variant: answer "I'm fine" on the call screen; the incident goes to **MONITORING**.
 
-## 5. Rider (1.5 min)
+## 5. Driver and AI forecasting (1 min)
+
+**Clicks**
+1. Home, then **Driver: take over a car**. Pick any idle car (search by short id, e.g. `042`). The car is now human-controlled: it parks instead of wandering, and the simulator stops driving it.
+2. The map shows the **Demand** heatmap from the Demand Forecast agent. Drag the slider **Now → +15 → +30**: the hexes shift as the forecast moves ahead. Tap a hot hex: rides/h, trend, expected earnings per hour and the **AI explanation** line.
+3. On the **Move to hotspot** card, tap it: the road route (OSRM) to the best-paying nearby hotspot is drawn, with its distance.
+4. Tap **Send me a ride (demo)**. A **New ride request** card slides up: pickup, drop, fare, trip km, ETA to pickup and a 15 s countdown. Tap **Accept**: "Ride accepted: head to the pickup".
+5. Optional: send another and tap **Decline**: "Declined: re-matched to d_…" (the ride goes to the next-best car and is never offered to you again).
+
+**Say**
+"The Demand Forecast agent recomputes every minute: Holt smoothing per hexagon, a Bengaluru time-of-day curve, the same hour on previous days, and boosts for active scenarios like a rain storm. The numbers are deterministic; the LLM only writes the one-line explanations for the top five hotspots, and those are thrown away the moment the scenarios change, so you never see 'heavy rain' after the storm has passed. When a human takes over a car, matching stops auto-accepting: the broker sends a real offer, and a decline or a timeout re-runs matching without you."
+
+**If it fails live:** if the heatmap is empty, the city has had no requests in the last 2 hours: click **Rush hour** in Ops and wait a minute, or show `GET https://dispatch-go.onrender.com/v1/forecast/heatmap?horizon=15`. If no request card appears within 5 s, tap **Send me a ride (demo)** again (the offer goes out on the `driver:<id>` stream topic).
+
+## 6. Rider (1.25 min)
 
 **Clicks**
 1. Back to Home, then click the **Rider** card. Under "Who is riding today?", pick **Priya Sharma**.
@@ -99,7 +121,21 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 
 **If it fails live:** if the LLM is slow (more than 10 s), switch on **Force rule-based parser (demo)** and resend; the same two legs come back in milliseconds. If surge zones don't light up, wait for the next 30 s recompute, or show `GET /v1/pricing/surge-map`.
 
-## 6. Finance (1 min)
+## 7. Legal agent (30 s)
+
+**Clicks**
+1. Ops, right panel: click the **Legal** tab. Point at **Bengaluru** (PRICING CITY): **Surge cap 2.5x**.
+2. Paste into **Regulation text** and click **Ingest**:
+   > Karnataka Transport Dept notice: surge pricing for app-based cabs is capped at 1.5x the base fare with immediate effect.
+3. The result shows **APPLIED**, the source (**LLM** or **RULES**) and the diff `max_surge_multiplier 2.5 -> 1.5`. Turn on **Surge zones** (rain storm still running from step 6): within 30 s no hex is above 1.5x. The change is in the **Audit log**.
+4. Restore: ingest `Demo restore: the surge cap of 2.5x applies again.` and the cap is back to 2.5x.
+
+**Say**
+"Regulation arrives as text. The Legal agent extracts a change set with the LLM, and a regex extractor runs alongside it; its explicit numbers win, so a hallucinated value never lands. Every value is bounds-checked, applied at once, audited, and Pricing reads the cap per city. The rule store also holds the city levy, but the ledger still uses a fixed 2%: it's stored, not wired yet."
+
+**If it fails live:** the regex fallback applies the same 1.5x without the LLM (the result says **RULES**). Show `GET https://dispatch-go.onrender.com/v1/legal/jurisdictions/bengaluru` and `/v1/legal/audit`.
+
+## 8. Finance (1 min)
 
 **Clicks**
 1. Ops: point at the **Money** tile: **Balanced ₹0.00**, Payouts today, Held for review, Platform revenue, Rides settled today.
@@ -110,7 +146,7 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 
 **If it fails live:** open `https://dispatch-go.onrender.com/v1/ledger/trial-balance` (`"total_paise":0,"balanced":true`) and `/v1/ledger/summary`.
 
-## 7. Public API and downloads (0.5 min)
+## 9. Public API and downloads (0.5 min)
 
 **Clicks**
 1. Open https://dispatch-go.onrender.com/docs: Swagger UI, OpenAPI 3.1, about 70 operations in 10 tags.
@@ -126,4 +162,4 @@ Ordered by rubric weight. Each step has **clicks**, **say** (talk track), and **
 
 ## After the demo
 
-The suspended driver from step 4 stays frozen until it is unsuspended: `POST /v1/safety/drivers/{id}/unsuspend`, confirmed by the Ops Supervisor. That also releases the held payout.
+The suspended driver from step 4 stays frozen until its incident is resolved through the Ops Supervisor (`POST /v1/safety/incidents/{id}/resolve`), which unsuspends the driver and releases the held payout. In DEMO_MODE, `POST /v1/safety/incidents/resolve-stale?older_than=60m` does this for every incident left open longer than an hour. Close the Driver screen (or wait 10 minutes) to hand the taken-over car back to the simulator.
