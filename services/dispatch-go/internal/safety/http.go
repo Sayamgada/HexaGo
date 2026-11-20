@@ -76,11 +76,13 @@ func (s *Service) Routes(r chi.Router) {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		if err := s.Unsuspend(r.Context(), id, in.ConfirmedBy); err != nil {
+		was, err := s.ReleaseIncident(r.Context(), id, in.IncidentID, in.ConfirmedBy)
+		if err != nil {
 			writeErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"driver_id": id, "suspended": false, "confirmed_by": in.ConfirmedBy})
+		writeJSON(w, http.StatusOK, map[string]any{"driver_id": id, "suspended": false, "was_suspended": was,
+			"confirmed_by": in.ConfirmedBy})
 	})
 	r.Post("/v1/safety/track", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

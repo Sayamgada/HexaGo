@@ -96,9 +96,9 @@ Steps 2 to 4 run slightly shorter than their old 2-minute slots. Cut the PR #1 w
 ## 5. Driver and AI forecasting (1 min)
 
 **Clicks**
-1. Home, then **Driver: take over a car**. Pick any idle car (search by short id, e.g. `042`). The car is now human-controlled: it parks instead of wandering, and the simulator stops driving it.
+1. Home, then **Select Driver** (the picker is titled "Driver: take over a car"). Pick any idle car (search by short id, e.g. `042`). The car is now human-controlled: it parks instead of wandering, and the simulator stops driving it.
 2. The map shows the **Demand** heatmap from the Demand Forecast agent. Drag the slider **Now → +15 → +30**: the hexes shift as the forecast moves ahead. Tap a hot hex: rides/h, trend, expected earnings per hour and the **AI explanation** line.
-3. On the **Move to hotspot** card, tap it: the road route (OSRM) to the best-paying nearby hotspot is drawn, with its distance.
+3. Under **Move to hotspot**, tap the top-ranked card (distance, ₹/h, explanation): the road route (OSRM) to that hotspot is drawn on the map.
 4. Tap **Send me a ride (demo)**. A **New ride request** card slides up: pickup, drop, fare, trip km, ETA to pickup and a 15 s countdown. Tap **Accept**: "Ride accepted: head to the pickup".
 5. Optional: send another and tap **Decline**: "Declined: re-matched to d_…" (the ride goes to the next-best car and is never offered to you again).
 

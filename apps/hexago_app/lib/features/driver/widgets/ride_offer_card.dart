@@ -119,16 +119,17 @@ class _RideOfferCardState extends State<RideOfferCard> {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
+            flex: 2,
             child: OutlinedButton.icon(
               key: const ValueKey('offer-decline'),
               onPressed: expired || widget.busy ? null : widget.onDecline,
               icon: const Icon(Icons.close),
-              label: const Text('Decline'),
+              label: const Text('Decline', maxLines: 1, softWrap: false, overflow: TextOverflow.fade),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            flex: 2,
+            flex: 3,
             child: FilledButton.icon(
               key: const ValueKey('offer-accept'),
               onPressed: expired || widget.busy ? null : widget.onAccept,

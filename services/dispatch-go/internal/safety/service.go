@@ -358,6 +358,23 @@ func (s *Service) Unsuspend(ctx context.Context, driverID, confirmedBy string) e
 	return nil
 }
 
+// ReleaseIncident is the supervisor-confirmed release of an incident's driver.
+// A live suspension is lifted through Unsuspend. Suspensions live in memory, so
+// after a restart the driver may no longer be suspended while the ledger still
+// holds the incident's payouts: then the release hooks run for that incident
+// anyway (releasing the holds) and wasSuspended is false.
+func (s *Service) ReleaseIncident(ctx context.Context, driverID, incidentID, confirmedBy string) (wasSuspended bool, err error) {
+	err = s.Unsuspend(ctx, driverID, confirmedBy)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, ErrNotSuspended) || incidentID == "" {
+		return false, err
+	}
+	s.fire(ctx, true, Suspension{DriverID: driverID, IncidentID: incidentID, Actor: confirmedBy, At: s.now()})
+	return false, nil
+}
+
 // Suspended returns the driver's suspension, if any.
 func (s *Service) Suspended(driverID string) (Suspension, bool) {
 	s.mu.Lock()
