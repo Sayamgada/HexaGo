@@ -273,6 +273,7 @@ def forecast(recent: Iterable[RideRequest], history: Iterable[RideRequest], now:
     supply = supply or {}
     bins = bin_requests(recent, now)
     hist, _ = history_rates(history, now)
+    running = [s for s in scenarios if s.until > now]  # an ended scenario still fades the numbers, not the text
     recent_bins = RECENT_S // BIN_S
     out: Dict[int, List[Dict[str, Any]]] = {}
     for horizon in HORIZONS:
@@ -298,7 +299,7 @@ def forecast(recent: Iterable[RideRequest], history: Iterable[RideRequest], now:
                 "trend": _trend(level, tr),
                 "history_rate": round(hist.get(c, 0.0), 2),
             }
-            row["explanation"] = template_explanation(row, horizon, scenarios)
+            row["explanation"] = template_explanation(row, horizon, running)
             row["explanation_source"] = "template"
             cells.append(row)
         cells.sort(key=lambda r: (-r["demand_score"], r["h3"]))

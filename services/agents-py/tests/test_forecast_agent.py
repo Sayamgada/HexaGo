@@ -204,6 +204,50 @@ async def test_scenario_change_triggers_a_new_explanation_and_fallback_keeps_tem
     assert not [e for e in await store.recent(20) if e["metadata"].get("kind") == "forecast_reasoning"]
 
 
+async def test_scenario_change_clears_llm_explanations():
+    """No "heavy rain" line survives the end of a storm, and a late answer for the old scenarios is dropped."""
+    rain = fm.Scenario("rain_storm", T0 + dt.timedelta(minutes=30))
+    rainy = {"items": [{"h3": cell(MG_ROAD), "explanation": "Heavy rain near MG Road keeps riders off bikes."}]}
+    gate = asyncio.Event()
+
+    async def late(**_):
+        await gate.wait()
+        return llm_response(rainy)
+
+    llm = make_llm(completion=ScriptedProvider([llm_response(rainy), late]), fallback_models="",
+                   timeout_s=2, min_interval_s=0)
+    a, _, clock = make_agent([busy([rain]), busy(), busy([rain]), busy()], llm)
+    await a.refresh()
+    await a.idle()
+    top = next(c for c in a.view(15)["cells"] if c["h3"] == cell(MG_ROAD))
+    assert top["explanation_source"] == "llm" and "Heavy rain" in top["explanation"]
+    # The storm ends: the LLM line is cleared at once, the template no longer mentions rain.
+    clock.t += dt.timedelta(seconds=60)
+    await a.refresh()
+    for h in fm.HORIZONS:
+        for c in a.view(h)["cells"]:
+            assert c["explanation_source"] == "template" and "rain" not in c["explanation"].lower()
+    await a.idle()
+    # Rain again, then it ends while the LLM is still answering: the stale answer is discarded.
+    clock.t += dt.timedelta(seconds=60)
+    await a.refresh()
+    clock.t += dt.timedelta(seconds=60)
+    await a.refresh()
+    gate.set()
+    await a.idle()
+    assert len(llm._completion.calls) >= 2  # the late answer really came from the provider
+    assert {c["explanation_source"] for c in a.view(15)["cells"]} == {"template"}
+
+
+async def test_ended_scenario_is_not_active():
+    ended = fm.Scenario("rain_storm", T0 - dt.timedelta(minutes=1))
+    a, _, _ = make_agent([busy([ended])])
+    await a.refresh()
+    await a.idle()
+    assert a.active_scenarios() == ()
+    assert all("rain" not in c["explanation"] for c in a.view(0)["cells"])
+
+
 async def test_explanation_errors_never_break_the_agent():
     class Exploding:
         async def complete_json(self, *a, **k):

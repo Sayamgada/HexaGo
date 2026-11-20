@@ -273,6 +273,22 @@ async def test_api_escalate_and_resolve(api):
     assert r.status_code == 200 and r.json()["status"] == "resolved"
 
 
+async def test_api_resolve_stale_is_demo_only(api):
+    client, s, actions, _ = api
+    inc_id = (await client.post("/v1/safety/signal", json=signal(0.9))).json()["incident_id"]
+    await s.idle()
+    r = await client.post("/v1/safety/incidents/resolve-stale?older_than=60m")
+    assert r.status_code == 200 and r.json()["resolved"] == [] and r.json()["older_than_s"] == 3600
+    s.clock.advance(3601)
+    assert (await client.post("/v1/safety/incidents/resolve-stale?older_than=bogus")).status_code == 422
+    s.demo = False
+    assert (await client.post("/v1/safety/incidents/resolve-stale")).status_code == 403
+    s.demo = True
+    r = await client.post("/v1/safety/incidents/resolve-stale")
+    assert r.status_code == 200 and [x["incident_id"] for x in r.json()["resolved"]] == [inc_id]
+    assert (await client.get(f"/v1/safety/incidents/{inc_id}")).json()["status"] == "resolved"
+
+
 async def test_api_errors(api):
     client, *_ = api
     assert (await client.post("/v1/safety/signal", json={"ride_id": "r"})).status_code == 422

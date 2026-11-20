@@ -6638,6 +6638,93 @@
         "x-served-by": "agents-py"
       }
     },
+    "/v1/safety/incidents/resolve-stale": {
+      "post": {
+        "description": "Scope `agents:invoke` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",
+        "operationId": "resolveStaleIncidents",
+        "parameters": [
+          {
+            "description": "60m (default) | 2h | 90s | seconds",
+            "in": "query",
+            "name": "older_than",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checked": {
+                      "type": "integer"
+                    },
+                    "older_than_s": {
+                      "type": "integer"
+                    },
+                    "resolved": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "skipped": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "older_than_s",
+                    "checked",
+                    "resolved",
+                    "skipped"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Cleanup result"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "DEMO_MODE only: resolve check_in / escalated incidents older than older_than through the Ops Supervisor-confirmed resolve path",
+        "tags": [
+          "Safety"
+        ],
+        "x-required-scope": "agents:invoke",
+        "x-served-by": "agents-py"
+      }
+    },
     "/v1/safety/incidents/{incident_id}": {
       "get": {
         "description": "Scope `rides:read` when called with an API key (keyless first-party calls are allowed). Served by agents-py through the gateway proxy.",

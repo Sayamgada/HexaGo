@@ -56,6 +56,9 @@ CHECKIN_AGENT = "safety_sentinel_checkin"  # own LLM min-interval bucket: a repl
 DETECTOR = "safety_detector"
 RIDER = "rider"
 SUPERVISOR = rules.SUPERVISOR
+STALE_STATUSES = ("check_in", "escalated")  # what the Ops report flags as open
+CLEANUP_REQUESTER = "ops_demo_cleanup"
+CLEANUP_NOTE = "auto-resolved: demo cleanup"
 CONTEXT_TIMEOUT_S = 2.0
 
 
@@ -567,6 +570,31 @@ class SafetySentinel:
         await self._step(inc, "resolved", SUPERVISOR, f"incident {incident_id} resolved: {note.strip()}",
                          requested_by=requested_by)
         return self.store.snapshot(inc)
+
+    async def resolve_stale(self, older_than_s: float, limit: int = 200) -> Dict[str, Any]:
+        """DEMO_MODE maintenance: close check-in / escalated incidents older than ``older_than_s``.
+
+        Each one goes through ``resolve`` - the Ops Supervisor reviews it, a
+        suspended driver is unfrozen (which releases the held payout) and the
+        timeline gets the "auto-resolved: demo cleanup" note. Anything the
+        Supervisor rejects (e.g. a rider check-in still pending) is skipped.
+        """
+        cutoff = self.clock() - dt.timedelta(seconds=older_than_s)
+        resolved: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, Any]] = []
+        candidates = [i for i in await self.store.list_incidents(limit)
+                      if i.get("status") in STALE_STATUSES and i.get("created_at") and i["created_at"] < cutoff]
+        for inc in sorted(candidates, key=lambda i: i["created_at"]):
+            iid = str(inc["id"])
+            try:
+                snap = await self.resolve(iid, CLEANUP_REQUESTER, CLEANUP_NOTE)
+                resolved.append({"incident_id": iid, "driver_id": inc.get("driver_id"), "status": snap.get("status")})
+            except ResolutionRejected as err:
+                skipped.append({"incident_id": iid, "violations": list(err.confirmation.violations)})
+            except (ActionError, PermissionError, IncidentNotFound) as err:
+                skipped.append({"incident_id": iid, "violations": [f"could not resolve: {err}"]})
+        return {"older_than_s": int(older_than_s), "checked": len(candidates), "resolved": resolved,
+                "skipped": skipped}
 
     # ---- views ----
 

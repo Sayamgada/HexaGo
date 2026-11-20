@@ -153,6 +153,12 @@ func paths() M {
 		"/v1/safety/incidents/{incident_id}/resolve": M{"post": op(tagSafety, "resolveIncident", "Resolve an incident (Ops Supervisor confirms)", sAgents, proxied(),
 			path("incident_id", ""), body(obj(nil, M{"requested_by": str(""), "note": str("")}), true),
 			ok(200, "Resolved", ref("Incident")), fails(404, 409, 502))},
+		"/v1/safety/incidents/resolve-stale": M{"post": op(tagSafety, "resolveStaleIncidents",
+			"DEMO_MODE only: resolve check_in / escalated incidents older than older_than through the Ops Supervisor-confirmed resolve path", sAgents, proxied(),
+			query("older_than", "string", "60m (default) | 2h | 90s | seconds"),
+			ok(200, "Cleanup result", obj([]string{"older_than_s", "checked", "resolved", "skipped"}, M{
+				"older_than_s": integer(""), "checked": integer(""), "resolved": arr(anyObj("")), "skipped": arr(anyObj("")),
+			})), fails(403, 422))},
 		"/v1/safety/checkins": M{"get": op(tagSafety, "listCheckins", "Rider safety check-ins", sRidesR, proxied(),
 			query("status", "string", "pending (default) | all | answered | expired"), ok(200, "Check-ins", ref("CheckinList")))},
 		"/v1/safety/checkins/{checkin_id}": M{"get": op(tagSafety, "getCheckin", "A check-in", sRidesR, proxied(),

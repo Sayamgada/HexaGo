@@ -7,7 +7,10 @@ asynchronously and through ``core.llm`` (guardrails, budget, cache); until it
 lands - or when the LLM is unavailable - each cell carries its deterministic
 template. LLM calls are event-driven: only when a top-5 cell lacks a fresh
 explanation and either ``LLM_GAP_S`` has passed or the active scenarios
-changed. The forecast numbers themselves never come from the LLM.
+changed. Whenever the set of active scenarios changes, every LLM line is
+dropped at once (and an answer still in flight for the old set is discarded),
+so no "heavy rain" text outlives a storm. The forecast numbers themselves
+never come from the LLM.
 """
 from __future__ import annotations
 
@@ -68,6 +71,7 @@ class ForecastAgent:
         self._llm_calls = 0
         self._last_llm: Optional[dt.datetime] = None
         self._last_llm_scenarios: Optional[Tuple[str, ...]] = None
+        self._scenario_key: Tuple[str, ...] = ()
         self._lock = asyncio.Lock()
         self._tasks: Set[asyncio.Task] = set()
 
@@ -85,6 +89,11 @@ class ForecastAgent:
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
+    def active_scenarios(self, now: Optional[dt.datetime] = None) -> Tuple[str, ...]:
+        """Names of the scenarios still running at ``now`` (an ended one only fades in the numbers)."""
+        now = now or self.clock()
+        return tuple(sorted({s.name for s in self.scenarios if s.until > now}))
+
     def stale(self, max_age_s: float) -> bool:
         return self.as_of is None or (self.clock() - self.as_of).total_seconds() > max_age_s
 
@@ -97,6 +106,10 @@ class ForecastAgent:
             self.cells = fm.forecast(loaded.recent, loaded.history, now, loaded.scenarios, loaded.supply, self.center)
             self.scenarios, self.source_name, self.as_of = loaded.scenarios, loaded.source, now
             self.runs += 1
+            key = self.active_scenarios(now)
+            if key != self._scenario_key:
+                self.explanations.clear()  # regenerate for the new scenarios
+                self._scenario_key = key
             top = fm.hotspots(self.cells[EXPLAIN_HORIZON], EXPLAIN_TOP)
             await self._log_run(loaded, top, (time.perf_counter() - start) * 1000)
             self._maybe_explain(top, now)
@@ -129,19 +142,19 @@ class ForecastAgent:
     def _maybe_explain(self, top: List[Dict[str, Any]], now: dt.datetime) -> None:
         if not top or all(self._fresh(c["h3"], now) for c in top):
             return
-        names = tuple(sorted(s.name for s in self.scenarios))
+        names = self._scenario_key
         gap_ok = self._last_llm is None or (now - self._last_llm).total_seconds() >= LLM_GAP_S
         if not gap_ok and names == self._last_llm_scenarios:
             return
         self._last_llm, self._last_llm_scenarios = now, names
         self._llm_calls += 1
-        task = asyncio.create_task(self._explain([dict(c) for c in top], now))
+        task = asyncio.create_task(self._explain([dict(c) for c in top], now, names))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    async def _explain(self, top: List[Dict[str, Any]], now: dt.datetime) -> None:
+    async def _explain(self, top: List[Dict[str, Any]], now: dt.datetime, key: Tuple[str, ...] = ()) -> None:
         start = time.perf_counter()
-        scen = ", ".join(s.name for s in self.scenarios) or "none"
+        scen = ", ".join(key) or "none"
         facts = "\n".join(
             f"- {c['h3']}: ~{c['expected_requests_per_hr']:.0f} rides/h in {EXPLAIN_HORIZON} min, "
             f"{c['recent_requests']} requests in the last 30 min ({c['trend']}), {c['supply']} idle cars, "
@@ -160,6 +173,8 @@ class ForecastAgent:
             return
         if res.used_fallback:
             return  # the template stays
+        if key != self._scenario_key:
+            return  # the scenarios changed while the LLM was answering: drop the stale lines
         wanted = {c["h3"] for c in top}
         got = {i["h3"]: i["explanation"] for i in res.data.get("items", []) if i.get("h3") in wanted}
         for h3_id, text in got.items():

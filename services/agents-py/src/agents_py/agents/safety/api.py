@@ -4,12 +4,16 @@
     GET  /v1/safety/incidents?limit=            incidents, newest first (+ suppressed false positives)
     GET  /v1/safety/incidents/{id}              timeline, transcript, actions, check-ins, vehicle path
     POST /v1/safety/incidents/{id}/resolve      {"requested_by","note"} - Ops Supervisor must confirm
+    POST /v1/safety/incidents/resolve-stale?older_than=60m
+                                                DEMO_MODE only: resolve old check_in / escalated incidents
+                                                through the same Supervisor-confirmed path
     GET  /v1/safety/checkins?status=pending     live check-ins (the Ops console's "Open rider phone")
     GET  /v1/safety/checkins/{id}               one check-in (the call screen)
     POST /v1/safety/checkins/{id}/reply         {"transcript"} - the rider's answer
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -24,6 +28,16 @@ from src.agents_py.agents.safety.store import public
 from src.agents_py.core.graph import agent
 
 router = APIRouter()
+
+_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_older_than(raw: str) -> int:
+    """'90s' | '60m' | '2h' | '1d' | '600' (seconds) -> seconds (> 0)."""
+    m = re.fullmatch(r"(\d+)([smhd]?)", (raw or "").strip().lower())
+    if not m or int(m.group(1)) <= 0:
+        raise ValueError(f"older_than must look like 60m, 2h or 90s, got {raw!r}")
+    return int(m.group(1)) * _UNITS[m.group(2) or "s"]
 
 
 class SignalIn(BaseModel):
@@ -74,6 +88,18 @@ async def get_incident(incident_id: str):
         return await s.detail(incident_id)
     except IncidentNotFound:
         raise HTTPException(404, "incident not found") from None
+
+
+@router.post("/v1/safety/incidents/resolve-stale")
+async def resolve_stale(older_than: str = Query("60m", max_length=16)):
+    s = await get_sentinel()
+    if not s.demo:
+        return JSONResponse(status_code=403, content={"error": "resolve-stale is only available in DEMO_MODE"})
+    try:
+        seconds = parse_older_than(older_than)
+    except ValueError as err:
+        return JSONResponse(status_code=422, content={"error": str(err)})
+    return await s.resolve_stale(seconds)
 
 
 @router.post("/v1/safety/incidents/{incident_id}/resolve")

@@ -355,6 +355,39 @@ async def test_resolve_blocked_while_rider_check_in_pending():
     await settle(s)
 
 
+async def test_resolve_stale_goes_through_the_supervisor():
+    actions = FakeActions()
+    s, rec, clock, _ = make_sentinel(actions)
+    old = (await s.handle_signal(signal(0.9)))["incident_id"]
+    waiting = (await s.handle_signal(signal(0.5, ride="ride7", driver="d_007")))["incident_id"]  # check-in pending
+    await settle(s)
+    clock.advance(2 * 3600)
+    fresh = (await s.handle_signal(signal(0.9, ride="ride9", driver="d_009")))["incident_id"]
+    await settle(s)
+    out = await s.resolve_stale(3600)
+    assert [r["incident_id"] for r in out["resolved"]] == [old]
+    assert [r["incident_id"] for r in out["skipped"]] == [waiting]
+    assert any("check-in" in v for v in out["skipped"][0]["violations"])  # the Supervisor rule still holds
+    assert s.store.incidents[old]["status"] == "resolved"
+    assert s.store.incidents[waiting]["status"] != "resolved" and s.store.incidents[fresh]["status"] == "escalated"
+    last = s.store.incidents[old]["timeline"][-1]
+    assert last["step"] == "resolved" and "auto-resolved: demo cleanup" in last["details"]["summary"]
+    assert "supervisor_review" in steps(s, old) and "unsuspend" in actions.names()  # payout released on unfreeze
+    assert s.store.incidents[old]["resolution"] == "auto-resolved: demo cleanup"
+    # Nothing left to clean the second time.
+    again = await s.resolve_stale(3600)
+    assert again["resolved"] == [] and again["checked"] >= 1
+
+
+def test_parse_older_than():
+    from src.agents_py.agents.safety.api import parse_older_than
+    assert parse_older_than("60m") == 3600 and parse_older_than("2h") == 7200
+    assert parse_older_than("90s") == 90 and parse_older_than("600") == 600 and parse_older_than(" 1D ") == 86400
+    for bad in ("", "abc", "-5m", "0m", "5x"):
+        with pytest.raises(ValueError):
+            parse_older_than(bad)
+
+
 # ---- failures never stop the escalation ----
 
 async def test_failed_actions_are_logged_and_the_rest_continue():
